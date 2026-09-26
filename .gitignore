@@ -1,0 +1,54 @@
+# --- Environment files (secrets) ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Python virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Node / React ---
+node_modules/
+.npm/
+.eslintcache
+.vite/
+.next/
+coverage/
+
+# --- Build output ---
+dist/
+build/
+
+# --- Local databases ---
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Logs ---
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- VS Code ---
+.vscode/*
+!.vscode/extensions.json
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
