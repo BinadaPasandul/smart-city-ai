@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic
 pydantic-settings
+google-genai
 pytest
 pytest-asyncio
 httpx

@@ -1,14 +1,49 @@
 """Simple keyword router used before LLM-based routing is introduced."""
 
 import re
-from typing import Protocol
+from enum import Enum
+from typing import Literal, Protocol
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class SpecialistAgentName(str, Enum):
+    """Names the Orchestrator is allowed to select."""
+
+    MOBILITY = "mobility"
+    ENVIRONMENT = "environment"
+    PUBLIC_SERVICES = "public_services"
+
+
+class RoutingDecision(BaseModel):
+    """Validated routing outcome; it contains no user-facing answer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_name: SpecialistAgentName | None
+    confidence: float = Field(strict=True, ge=0.0, le=1.0)
+    reason: str = Field(min_length=1, max_length=240)
+    needs_clarification: bool
+
+    @model_validator(mode="after")
+    def clarification_has_no_agent(self) -> "RoutingDecision":
+        if self.needs_clarification and self.agent_name is not None:
+            raise ValueError("A clarification decision cannot select a specialist")
+        return self
+
+
+class RoutingResult(BaseModel):
+    """Decision plus the strategy that produced it."""
+
+    decision: RoutingDecision
+    routing_method: Literal["gemini", "deterministic_fallback"]
 
 
 class QueryRouter(Protocol):
     """Interface allowing the routing strategy to be replaced independently."""
 
-    def route(self, query: str) -> str | None:
-        """Return a specialist name, or None when no category matches."""
+    async def route(self, query: str, *, request_id: str | None = None) -> RoutingResult:
+        """Return a validated decision; None agent means no category matched."""
 
 
 class DeterministicQueryRouter:
@@ -37,11 +72,17 @@ class DeterministicQueryRouter:
         """Lowercase and normalize punctuation/spacing for phrase matching."""
         return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", query.lower())).strip()
 
-    def route(self, query: str) -> str | None:
+    async def route(self, query: str, *, request_id: str | None = None) -> RoutingResult:
         """Choose the category with the most distinct matching keywords."""
         normalized = self._normalize(query)
         if not normalized:
-            return None
+            decision = RoutingDecision(
+                agent_name=None,
+                confidence=1.0,
+                reason="The query is empty after normalization.",
+                needs_clarification=False,
+            )
+            return RoutingResult(decision=decision, routing_method="deterministic_fallback")
 
         match_counts = {
             category: sum(f" {keyword} " in f" {normalized} " for keyword in keywords)
@@ -49,7 +90,20 @@ class DeterministicQueryRouter:
         }
         highest_count = max(match_counts.values())
         if highest_count == 0:
-            return None
+            decision = RoutingDecision(
+                agent_name=None,
+                confidence=1.0,
+                reason="No supported city-service keywords matched.",
+                needs_clarification=False,
+            )
+            return RoutingResult(decision=decision, routing_method="deterministic_fallback")
 
         tied = {category for category, count in match_counts.items() if count == highest_count}
-        return next(category for category in self.TIE_PRIORITY if category in tied)
+        selected = next(category for category in self.TIE_PRIORITY if category in tied)
+        decision = RoutingDecision(
+            agent_name=SpecialistAgentName(selected),
+            confidence=1.0,
+            reason=f"Matched {highest_count} keyword(s) for {selected}.",
+            needs_clarification=False,
+        )
+        return RoutingResult(decision=decision, routing_method="deterministic_fallback")
