@@ -11,19 +11,22 @@ from app.agents.orchestrator.router import (
     RoutingDecision,
     RoutingResult,
 )
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-ROUTING_INSTRUCTIONS = """Classify the user's request into exactly one supported city-service category.
+ROUTING_INSTRUCTIONS = """Plan which supported city-service specialists are needed for the request.
+Select one or more specialists only when each is genuinely relevant. Never select all by default.
 mobility: traffic, public transportation, buses, trains, routes, transport navigation,
 parking, EV charging, or transport conditions.
 environment: weather, air quality, pollution, environmental conditions, or waste.
 public_services: hospitals, police, fire stations, emergency services, government
 services, or citizen complaints.
 If the request does not contain enough context to determine a relevant category,
-set agent_name to null and needs_clarification to true. If it is unrelated to these
-city services, set agent_name to null and needs_clarification to false.
-Return only the requested structured classification. Never answer the user's question.
+set agent_names to an empty list and needs_clarification to true. If it is unrelated
+to these city services, set agent_names to an empty list and needs_clarification to false.
+Order selected specialists as mobility, environment, public_services.
+Return only the requested structured plan. Never answer the user's question.
 """
 
 
@@ -42,12 +45,12 @@ class GeminiQueryRouter:
         self,
         api_key: str | None,
         *,
-        model: str = "gemini-2.5-flash",
+        model: str | None = None,
         client: Any | None = None,
         timeout_seconds: float = 15.0,
     ) -> None:
         self._api_key = api_key
-        self._model = model
+        self._model = model or get_settings().gemini_model
         self._client = client
         self._timeout_seconds = timeout_seconds
 
@@ -75,6 +78,17 @@ class GeminiQueryRouter:
             decision = RoutingDecision.model_validate_json(text)
         except (ValidationError, ValueError, TypeError) as exc:
             raise GeminiRoutingError("invalid_structured_output") from exc
+        stable_order = {name: index for index, name in enumerate((
+            "mobility", "environment", "public_services",
+        ))}
+        decision = decision.model_copy(
+            update={
+                "agent_names": sorted(
+                    decision.agent_names,
+                    key=lambda name: stable_order[name.value],
+                )
+            }
+        )
         return RoutingResult(decision=decision, routing_method="gemini")
 
     def _get_client(self) -> Any:
@@ -85,13 +99,22 @@ class GeminiQueryRouter:
             self._client = genai.Client(api_key=self._api_key).aio
         return self._client
 
+    async def aclose(self) -> None:
+        """Close the lazy async SDK client when its owner is shutting down."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
     @staticmethod
     def _generation_config() -> dict[str, Any]:
         return {
             "system_instruction": ROUTING_INSTRUCTIONS,
             "temperature": 0,
+            "max_output_tokens": 128,
             "response_mime_type": "application/json",
-            "response_schema": RoutingDecision,
+            # This SDK field accepts standard JSON Schema and avoids lossy
+            # conversion of Pydantic's additionalProperties setting.
+            "response_json_schema": RoutingDecision.model_json_schema(),
         }
 
 
@@ -108,7 +131,7 @@ class FallbackQueryRouter:
             result = await self._primary.route(query, request_id=request_id)
             if result.decision.needs_clarification:
                 return result
-            if result.decision.agent_name is not None:
+            if result.decision.agent_names:
                 return result
         except GeminiRoutingError as exc:
             fallback_category = exc.category
@@ -117,7 +140,7 @@ class FallbackQueryRouter:
             fallback_category = type(exc).__name__
 
         result = await self._fallback.route(query, request_id=request_id)
-        selected = result.decision.agent_name.value if result.decision.agent_name else "none"
+        selected = ",".join(name.value for name in result.decision.agent_names) or "none"
         logger.warning(
             "Routing fallback request_id=%s reason=%s selected_agent=%s",
             request_id or "unavailable",

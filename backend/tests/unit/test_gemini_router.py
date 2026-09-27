@@ -24,12 +24,12 @@ class MockGeminiClient:
             self.models.generate_content.return_value = SimpleNamespace(text=text)
 
 
-def decision_json(agent_name: str | None, *, confidence: float = 0.95, clarification: bool = False) -> str:
+def decision_json(agent_names: list[str], *, confidence: float = 0.95, clarification: bool = False) -> str:
     import json
 
     return json.dumps(
         {
-            "agent_name": agent_name,
+            "agent_names": agent_names,
             "confidence": confidence,
             "reason": "The request matches this city service.",
             "needs_clarification": clarification,
@@ -38,19 +38,56 @@ def decision_json(agent_name: str | None, *, confidence: float = 0.95, clarifica
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("agent_name", ["mobility", "environment", "public_services"])
-async def test_gemini_router_validates_supported_specialist_decisions(agent_name: str) -> None:
-    client = MockGeminiClient(decision_json(agent_name))
+@pytest.mark.parametrize("agent_names", [["mobility"], ["environment"], ["public_services"]])
+async def test_gemini_router_validates_supported_specialist_decisions(agent_names: list[str]) -> None:
+    client = MockGeminiClient(decision_json(agent_names))
     router = GeminiQueryRouter("test-key", client=client)
 
     result = await router.route("A natural-language request")
 
-    assert result.decision.agent_name.value == agent_name
+    assert [name.value for name in result.decision.agent_names] == agent_names
     assert result.decision.confidence == 0.95
     assert result.routing_method == "gemini"
     call = client.models.generate_content.await_args.kwargs
     assert call["config"]["response_mime_type"] == "application/json"
-    assert call["config"]["response_schema"] is RoutingDecision
+    assert call["config"]["response_json_schema"] == RoutingDecision.model_json_schema()
+
+
+@pytest.mark.asyncio
+async def test_router_uses_configured_model_and_keeps_explicit_override() -> None:
+    client = MockGeminiClient(decision_json(["mobility"]))
+    router = GeminiQueryRouter("test-key", model="test-model-id", client=client)
+
+    await router.route("parking")
+
+    assert client.models.generate_content.await_args.kwargs["model"] == "test-model-id"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "agent_names",
+    [
+        ["mobility", "environment"],
+        ["mobility", "public_services"],
+        ["environment", "public_services"],
+        ["mobility", "environment", "public_services"],
+    ],
+)
+async def test_gemini_router_accepts_multi_specialist_plans(agent_names: list[str]) -> None:
+    result = await GeminiQueryRouter(
+        "test-key", client=MockGeminiClient(decision_json(agent_names))
+    ).route("A multi-domain request")
+
+    assert [name.value for name in result.decision.agent_names] == agent_names
+
+
+@pytest.mark.asyncio
+async def test_gemini_router_normalizes_specialist_order() -> None:
+    result = await GeminiQueryRouter(
+        "test-key", client=MockGeminiClient(decision_json(["public_services", "mobility"]))
+    ).route("A multi-domain request")
+
+    assert [name.value for name in result.decision.agent_names] == ["mobility", "public_services"]
 
 
 @pytest.mark.asyncio
@@ -63,11 +100,11 @@ async def test_gemini_router_validates_supported_specialist_decisions(agent_name
     ],
 )
 async def test_gemini_classifies_indirect_natural_language(query: str, agent_name: str) -> None:
-    router = GeminiQueryRouter("test-key", client=MockGeminiClient(decision_json(agent_name)))
+    router = GeminiQueryRouter("test-key", client=MockGeminiClient(decision_json([agent_name])))
 
     result = await router.route(query)
 
-    assert result.decision.agent_name.value == agent_name
+    assert [name.value for name in result.decision.agent_names] == [agent_name]
 
 
 @pytest.mark.asyncio
@@ -75,9 +112,12 @@ async def test_gemini_classifies_indirect_natural_language(query: str, agent_nam
     "output",
     [
         "not json",
-        decision_json("made_up_agent"),
-        decision_json("mobility", confidence=1.5),
-        '{"agent_name":"mobility","confidence":0.8}',
+        decision_json(["made_up_agent"]),
+        decision_json(["mobility"], confidence=1.5),
+        decision_json(["mobility", "mobility"]),
+        decision_json(["mobility", "environment", "public_services", "mobility"]),
+        decision_json(["mobility"], clarification=True),
+        '{"agent_names":["mobility"],"confidence":0.8}',
     ],
 )
 async def test_gemini_rejects_malformed_or_invalid_decisions(output: str) -> None:
@@ -90,12 +130,12 @@ async def test_gemini_rejects_malformed_or_invalid_decisions(output: str) -> Non
 @pytest.mark.asyncio
 async def test_gemini_represents_clarification_without_agent() -> None:
     router = GeminiQueryRouter(
-        "test-key", client=MockGeminiClient(decision_json(None, clarification=True))
+        "test-key", client=MockGeminiClient(decision_json([], clarification=True))
     )
 
     result = await router.route("Is it okay there?")
 
-    assert result.decision.agent_name is None
+    assert result.decision.agent_names == []
     assert result.decision.needs_clarification is True
 
 
@@ -105,7 +145,7 @@ async def test_missing_api_key_uses_deterministic_fallback() -> None:
 
     result = await router.route("Where can I park?")
 
-    assert result.decision.agent_name.value == "mobility"
+    assert [name.value for name in result.decision.agent_names] == ["mobility"]
     assert result.routing_method == "deterministic_fallback"
 
 
@@ -118,7 +158,7 @@ async def test_gemini_exception_uses_deterministic_fallback() -> None:
         "Where can I park?", request_id="request-123"
     )
 
-    assert result.decision.agent_name.value == "mobility"
+    assert [name.value for name in result.decision.agent_names] == ["mobility"]
     assert result.routing_method == "deterministic_fallback"
 
 
@@ -129,7 +169,7 @@ async def test_invalid_gemini_output_uses_deterministic_fallback() -> None:
         "Where can I park?"
     )
 
-    assert result.decision.agent_name.value == "mobility"
+    assert [name.value for name in result.decision.agent_names] == ["mobility"]
 
 
 @pytest.mark.asyncio
@@ -145,7 +185,7 @@ async def test_deterministic_fallback_routes_each_supported_category(query: str,
     primary = GeminiQueryRouter(None)
     result = await FallbackQueryRouter(primary, DeterministicQueryRouter()).route(query)
 
-    assert result.decision.agent_name.value == agent_name
+    assert [name.value for name in result.decision.agent_names] == [agent_name]
 
 
 @pytest.mark.asyncio
@@ -174,7 +214,7 @@ async def test_orchestrator_uses_gemini_decision_and_preserves_request_id(query,
     agent = FakeAgent(agent_name)
     registry.register(agent)
     primary = GeminiQueryRouter(
-        "test-key", client=MockGeminiClient(decision_json(agent_name))
+        "test-key", client=MockGeminiClient(decision_json([agent_name]))
     )
     orchestrator = CityOrchestratorAgent(
         registry, FallbackQueryRouter(primary, DeterministicQueryRouter())
@@ -194,7 +234,7 @@ async def test_clarification_does_not_invoke_specialist() -> None:
     mobility = FakeAgent("mobility")
     registry.register(mobility)
     primary = GeminiQueryRouter(
-        "test-key", client=MockGeminiClient(decision_json(None, clarification=True))
+        "test-key", client=MockGeminiClient(decision_json([], clarification=True))
     )
     response = await CityOrchestratorAgent(
         registry, FallbackQueryRouter(primary, DeterministicQueryRouter())

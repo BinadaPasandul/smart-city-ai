@@ -20,20 +20,20 @@ from app.agents.orchestrator.router import DeterministicQueryRouter
 @pytest.mark.asyncio
 async def test_routes_supported_queries(query: str, expected: str) -> None:
     result = await DeterministicQueryRouter().route(query)
-    assert result.decision.agent_name.value == expected
+    assert [name.value for name in result.decision.agent_names] == [expected]
     assert result.routing_method == "deterministic_fallback"
 
 
 @pytest.mark.asyncio
 async def test_routing_is_case_insensitive_and_normalizes_punctuation() -> None:
     result = await DeterministicQueryRouter().route("AIR-quality, please!")
-    assert result.decision.agent_name.value == "environment"
+    assert [name.value for name in result.decision.agent_names] == ["environment"]
 
 
 @pytest.mark.asyncio
 async def test_unsupported_query_has_no_route() -> None:
     result = await DeterministicQueryRouter().route("Write me a poem about space.")
-    assert result.decision.agent_name is None
+    assert result.decision.agent_names == []
     assert result.decision.needs_clarification is False
 
 
@@ -42,7 +42,7 @@ async def test_ambiguous_query_uses_match_count_then_documented_tie_priority() -
     router = DeterministicQueryRouter()
 
     result = await router.route("traffic, parking, hospital")
-    assert result.decision.agent_name.value == "mobility"
-    # One match each: documented tie order is public_services > environment > mobility.
+    assert [name.value for name in result.decision.agent_names] == ["mobility", "public_services"]
+    # Equal matches follow first-mention order; query order is traffic, rain, hospital.
     result = await router.route("traffic and rain and hospital")
-    assert result.decision.agent_name.value == "public_services"
+    assert [name.value for name in result.decision.agent_names] == ["mobility", "environment", "public_services"]

@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,9 +15,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     gemini_api_key: str | None = None
+    gemini_model: str = "gemini-3.5-flash-lite"
     database_url: str | None = None
     jwt_secret: str | None = None
     jwt_algorithm: str = "HS256"
+    agent_execution_timeout_seconds: float = Field(default=10.0, gt=0)
 
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 

@@ -1,4 +1,4 @@
-"""Simple keyword router used before LLM-based routing is introduced."""
+"""Typed multi-agent routing decisions and deterministic keyword routing."""
 
 import re
 from enum import Enum
@@ -16,19 +16,21 @@ class SpecialistAgentName(str, Enum):
 
 
 class RoutingDecision(BaseModel):
-    """Validated routing outcome; it contains no user-facing answer."""
+    """Validated routing plan; it contains no user-facing answer."""
 
     model_config = ConfigDict(extra="forbid")
 
-    agent_name: SpecialistAgentName | None
+    agent_names: list[SpecialistAgentName] = Field(max_length=3)
     confidence: float = Field(strict=True, ge=0.0, le=1.0)
     reason: str = Field(min_length=1, max_length=240)
     needs_clarification: bool
 
     @model_validator(mode="after")
     def clarification_has_no_agent(self) -> "RoutingDecision":
-        if self.needs_clarification and self.agent_name is not None:
-            raise ValueError("A clarification decision cannot select a specialist")
+        if len(set(self.agent_names)) != len(self.agent_names):
+            raise ValueError("A routing decision cannot contain duplicate specialists")
+        if self.needs_clarification and self.agent_names:
+            raise ValueError("A clarification decision cannot select specialists")
         return self
 
 
@@ -64,7 +66,7 @@ class DeterministicQueryRouter:
         ),
     }
 
-    # On equal match counts, prefer public services, then environment, then mobility.
+    # If first-match positions also tie, prefer public services, environment, mobility.
     TIE_PRIORITY = ("public_services", "environment", "mobility")
 
     @staticmethod
@@ -77,7 +79,7 @@ class DeterministicQueryRouter:
         normalized = self._normalize(query)
         if not normalized:
             decision = RoutingDecision(
-                agent_name=None,
+                agent_names=[],
                 confidence=1.0,
                 reason="The query is empty after normalization.",
                 needs_clarification=False,
@@ -88,22 +90,37 @@ class DeterministicQueryRouter:
             category: sum(f" {keyword} " in f" {normalized} " for keyword in keywords)
             for category, keywords in self.KEYWORDS.items()
         }
-        highest_count = max(match_counts.values())
-        if highest_count == 0:
+        selected = [category for category, count in match_counts.items() if count > 0]
+        if not selected:
             decision = RoutingDecision(
-                agent_name=None,
+                agent_names=[],
                 confidence=1.0,
                 reason="No supported city-service keywords matched.",
                 needs_clarification=False,
             )
             return RoutingResult(decision=decision, routing_method="deterministic_fallback")
 
-        tied = {category for category, count in match_counts.items() if count == highest_count}
-        selected = next(category for category in self.TIE_PRIORITY if category in tied)
+        priority = {category: index for index, category in enumerate(self.TIE_PRIORITY)}
+        padded = f" {normalized} "
+        first_match = {
+            category: min(
+                padded.find(f" {keyword} ")
+                for keyword in self.KEYWORDS[category]
+                if f" {keyword} " in padded
+            )
+            for category in selected
+        }
+        selected.sort(
+            key=lambda category: (
+                -match_counts[category],
+                first_match[category],
+                priority[category],
+            )
+        )
         decision = RoutingDecision(
-            agent_name=SpecialistAgentName(selected),
+            agent_names=[SpecialistAgentName(category) for category in selected],
             confidence=1.0,
-            reason=f"Matched {highest_count} keyword(s) for {selected}.",
+            reason="Matched categories ordered by match count, then first mention in the query.",
             needs_clarification=False,
         )
         return RoutingResult(decision=decision, routing_method="deterministic_fallback")
