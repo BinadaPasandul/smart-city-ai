@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     jwt_secret: str | None = None
     jwt_algorithm: str = "HS256"
     agent_execution_timeout_seconds: float = Field(default=10.0, gt=0)
+    chat_max_message_length: int = Field(default=5000, ge=1, le=50000)
 
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 

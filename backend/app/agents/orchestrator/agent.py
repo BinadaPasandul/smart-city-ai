@@ -17,6 +17,11 @@ from app.agents.orchestrator.router import (
     RoutingResult,
     SpecialistAgentName,
 )
+from app.agents.orchestrator.synthesizer import (
+    FallbackResultSynthesizer,
+    GeminiResultSynthesizer,
+    ResultSynthesizer,
+)
 from app.agents.registry import AgentNotFoundError, AgentRegistry
 from app.core.config import settings
 
@@ -32,6 +37,7 @@ class CityOrchestratorAgent(BaseAgent):
         router: QueryRouter | None = None,
         *,
         execution_timeout_seconds: float | None = None,
+        synthesizer: ResultSynthesizer | None = None,
     ) -> None:
         super().__init__(
             "orchestrator",
@@ -39,6 +45,11 @@ class CityOrchestratorAgent(BaseAgent):
             capabilities=("gemini_routing", "deterministic_fallback", "parallel_execution"),
         )
         self._registry = registry
+        self._synthesizer = FallbackResultSynthesizer(
+            synthesizer or GeminiResultSynthesizer(
+                settings.gemini_api_key, model=settings.gemini_model
+            )
+        )
         self._router = router or FallbackQueryRouter(
             GeminiQueryRouter(settings.gemini_api_key, model=settings.gemini_model),
             DeterministicQueryRouter(),
@@ -102,10 +113,18 @@ class CityOrchestratorAgent(BaseAgent):
             len(summary.failed_agents),
         )
 
-        # Keep the existing single-specialist response shape for successful calls.
+        # Preserve the single-specialist response without an extra synthesis request.
         if len(results) == 1 and results[0].success and results[0].response is not None:
             response = results[0].response
-            return response.model_copy(update={"metadata": {**response.metadata, **metadata}})
+            return response.model_copy(
+                update={
+                    "metadata": {
+                        **response.metadata,
+                        **metadata,
+                        "synthesis_method": "single_specialist_passthrough",
+                    }
+                }
+            )
 
         errors = [result.error for result in results if result.error is not None]
         overall_error = None
@@ -128,15 +147,33 @@ class CityOrchestratorAgent(BaseAgent):
             if result.success and result.response is not None
             for source in result.response.sources
         ]
+        answer = "No specialist agent completed the request."
+        if summary.status is not ExecutionStatus.FAILED:
+            synthesis_result, synthesis_method = await self._synthesizer.synthesize(
+                request.query, summary
+            )
+            answer = synthesis_result.answer
+            if summary.status is ExecutionStatus.PARTIAL_SUCCESS:
+                unavailable = [name.value.replace("_", " ") for name in summary.failed_agents]
+                answer = (
+                    f"{answer.rstrip()}\nUnavailable information: "
+                    f"{', '.join(unavailable)} could not be retrieved."
+                )
+            metadata["synthesis_method"] = synthesis_method
+            metadata["synthesis_used_agents"] = [name.value for name in synthesis_result.used_agents]
+            metadata["synthesis_limitations"] = synthesis_result.limitations
+            logger.info(
+                "Synthesis finished request_id=%s method=%s successful_results=%d",
+                request.request_id,
+                synthesis_method,
+                len(summary.successful_agents),
+            )
+
         return AgentResponse(
             request_id=request.request_id,
             agent_name=self.name,
             success=summary.status is not ExecutionStatus.FAILED,
-            answer=(
-                "Specialist results are ready for synthesis."
-                if summary.status is not ExecutionStatus.FAILED
-                else "No specialist agent completed the request."
-            ),
+            answer=answer,
             sources=merged_sources,
             metadata=metadata,
             error=overall_error,
