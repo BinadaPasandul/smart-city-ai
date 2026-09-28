@@ -1,68 +1,281 @@
-"""Minimal in-process City Orchestrator agent."""
+"""City Orchestrator with bounded concurrent in-process agent execution."""
 
+import asyncio
 import logging
 
 from app.agents.base import BaseAgent
 from app.agents.contracts import AgentError, AgentErrorCode, AgentRequest, AgentResponse
+from app.agents.orchestrator.execution import (
+    ExecutionStatus,
+    OrchestrationExecutionSummary,
+    SpecialistExecutionResult,
+)
+from app.agents.orchestrator.gemini_router import FallbackQueryRouter, GeminiQueryRouter
+from app.agents.orchestrator.router import (
+    DeterministicQueryRouter,
+    QueryRouter,
+    RoutingResult,
+    SpecialistAgentName,
+)
+from app.agents.orchestrator.synthesizer import (
+    FallbackResultSynthesizer,
+    GeminiResultSynthesizer,
+    ResultSynthesizer,
+)
 from app.agents.registry import AgentNotFoundError, AgentRegistry
-from app.agents.orchestrator.router import DeterministicQueryRouter, QueryRouter
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class CityOrchestratorAgent(BaseAgent):
-    """Route one request to one registered specialist and return its result."""
+    """Plan a request, execute selected specialists concurrently, and collect results."""
 
-    def __init__(self, registry: AgentRegistry, router: QueryRouter | None = None) -> None:
+    def __init__(
+        self,
+        registry: AgentRegistry,
+        router: QueryRouter | None = None,
+        *,
+        execution_timeout_seconds: float | None = None,
+        synthesizer: ResultSynthesizer | None = None,
+    ) -> None:
         super().__init__(
             "orchestrator",
-            description="Routes citizen queries to one registered specialist agent.",
-            capabilities=("deterministic_routing",),
+            description="Plans citizen queries and coordinates registered specialist agents.",
+            capabilities=("gemini_routing", "deterministic_fallback", "parallel_execution"),
         )
         self._registry = registry
-        self._router = router or DeterministicQueryRouter()
+        self._synthesizer = FallbackResultSynthesizer(
+            synthesizer or GeminiResultSynthesizer(
+                settings.gemini_api_key, model=settings.gemini_model
+            )
+        )
+        self._router = router or FallbackQueryRouter(
+            GeminiQueryRouter(settings.gemini_api_key, model=settings.gemini_model),
+            DeterministicQueryRouter(),
+        )
+        self._execution_timeout_seconds = (
+            execution_timeout_seconds
+            if execution_timeout_seconds is not None
+            else settings.agent_execution_timeout_seconds
+        )
+        if self._execution_timeout_seconds <= 0:
+            raise ValueError("execution_timeout_seconds must be greater than zero")
 
     async def execute(self, request: AgentRequest) -> AgentResponse:
-        """Route and execute exactly one specialist while preserving request identity."""
+        """Route a request to up to three specialists and aggregate their outcomes."""
         if not request.query.strip():
+            return self._failure(request, AgentErrorCode.INVALID_REQUEST, "The request query must not be empty.")
+
+        routing = await self._router.route(request.query, request_id=str(request.request_id))
+        decision = routing.decision
+        routing_metadata = {"routing_method": routing.routing_method}
+
+        if decision.needs_clarification:
             return self._failure(
                 request,
-                AgentErrorCode.INVALID_REQUEST,
-                "The request query must not be empty.",
+                AgentErrorCode.NEEDS_CLARIFICATION,
+                "Could you provide a little more detail so I can direct your request?",
+                metadata=routing_metadata,
             )
-
-        agent_name = self._router.route(request.query)
-        if agent_name is None:
+        if not decision.agent_names:
             return self._failure(
                 request,
                 AgentErrorCode.UNSUPPORTED_REQUEST,
                 "The request does not match a supported city service category.",
+                metadata=routing_metadata,
             )
 
+        selected = decision.agent_names
+        logger.info(
+            "Starting orchestration request_id=%s routing_method=%s selected_agents=%s",
+            request.request_id,
+            routing.routing_method,
+            [agent.value for agent in selected],
+        )
+        results = await asyncio.gather(
+            *(self._execute_specialist(name, request) for name in selected)
+        )
+        summary = self._summarize(selected, results)
+        metadata = {
+            **routing_metadata,
+            "selected_agents": [agent.value for agent in selected],
+            "execution_status": summary.status.value,
+            "successful_agents": [agent.value for agent in summary.successful_agents],
+            "failed_agents": [agent.value for agent in summary.failed_agents],
+            "execution_summary": summary.model_dump(mode="json"),
+        }
+        logger.info(
+            "Finished orchestration request_id=%s status=%s succeeded=%d failed=%d",
+            request.request_id,
+            summary.status.value,
+            len(summary.successful_agents),
+            len(summary.failed_agents),
+        )
+
+        # Preserve the single-specialist response without an extra synthesis request.
+        if len(results) == 1 and results[0].success and results[0].response is not None:
+            response = results[0].response
+            return response.model_copy(
+                update={
+                    "metadata": {
+                        **response.metadata,
+                        **metadata,
+                        "synthesis_method": "single_specialist_passthrough",
+                    }
+                }
+            )
+
+        errors = [result.error for result in results if result.error is not None]
+        overall_error = None
+        if summary.status is ExecutionStatus.FAILED:
+            error_codes = {error.code for error in errors}
+            if error_codes == {AgentErrorCode.AGENT_NOT_FOUND}:
+                error_code = AgentErrorCode.AGENT_NOT_FOUND
+            elif error_codes == {AgentErrorCode.TIMEOUT}:
+                error_code = AgentErrorCode.TIMEOUT
+            else:
+                error_code = AgentErrorCode.AGENT_EXECUTION_FAILED
+            overall_error = AgentError(
+                code=error_code,
+                message="No selected specialist completed the request.",
+            )
+
+        merged_sources = [
+            source
+            for result in results
+            if result.success and result.response is not None
+            for source in result.response.sources
+        ]
+        answer = "No specialist agent completed the request."
+        if summary.status is not ExecutionStatus.FAILED:
+            synthesis_result, synthesis_method = await self._synthesizer.synthesize(
+                request.query, summary
+            )
+            answer = synthesis_result.answer
+            if summary.status is ExecutionStatus.PARTIAL_SUCCESS:
+                unavailable = [name.value.replace("_", " ") for name in summary.failed_agents]
+                answer = (
+                    f"{answer.rstrip()}\nUnavailable information: "
+                    f"{', '.join(unavailable)} could not be retrieved."
+                )
+            metadata["synthesis_method"] = synthesis_method
+            metadata["synthesis_used_agents"] = [name.value for name in synthesis_result.used_agents]
+            metadata["synthesis_limitations"] = synthesis_result.limitations
+            logger.info(
+                "Synthesis finished request_id=%s method=%s successful_results=%d",
+                request.request_id,
+                synthesis_method,
+                len(summary.successful_agents),
+            )
+
+        return AgentResponse(
+            request_id=request.request_id,
+            agent_name=self.name,
+            success=summary.status is not ExecutionStatus.FAILED,
+            answer=answer,
+            sources=merged_sources,
+            metadata=metadata,
+            error=overall_error,
+        )
+
+    async def _execute_specialist(
+        self, agent_name: SpecialistAgentName, request: AgentRequest
+    ) -> SpecialistExecutionResult:
+        """Resolve and execute one specialist with an independent timeout."""
         try:
-            specialist = self._registry.get(agent_name)
+            agent = self._registry.get(agent_name.value)
         except AgentNotFoundError:
-            logger.warning("Routed agent '%s' is not registered", agent_name)
-            return self._failure(
-                request,
-                AgentErrorCode.AGENT_NOT_FOUND,
-                f"The routed agent '{agent_name}' is not available.",
+            return SpecialistExecutionResult(
+                agent_name=agent_name,
+                success=False,
+                error=AgentError(
+                    code=AgentErrorCode.AGENT_NOT_FOUND,
+                    message=f"The selected agent '{agent_name.value}' is not registered.",
+                ),
             )
 
         try:
-            return await specialist.execute(request)
-        except Exception:
-            logger.exception("Agent '%s' failed while handling request %s", agent_name, request.request_id)
-            return self._failure(
-                request,
-                AgentErrorCode.AGENT_EXECUTION_FAILED,
-                "The selected agent could not complete the request.",
+            async with asyncio.timeout(self._execution_timeout_seconds):
+                response = await agent.execute(request)
+        except TimeoutError:
+            logger.warning(
+                "Specialist timed out request_id=%s agent=%s timeout_seconds=%s",
+                request.request_id,
+                agent_name.value,
+                self._execution_timeout_seconds,
+            )
+            return SpecialistExecutionResult(
+                agent_name=agent_name,
+                success=False,
+                error=AgentError(
+                    code=AgentErrorCode.TIMEOUT,
+                    message="The specialist exceeded its execution time limit.",
+                ),
+                timed_out=True,
+            )
+        except Exception as exc:
+            logger.error(
+                "Specialist failed request_id=%s agent=%s exception_type=%s",
+                request.request_id,
+                agent_name.value,
+                type(exc).__name__,
+            )
+            return SpecialistExecutionResult(
+                agent_name=agent_name,
+                success=False,
+                error=AgentError(
+                    code=AgentErrorCode.AGENT_EXECUTION_FAILED,
+                    message="The specialist could not complete the request.",
+                ),
             )
 
-    def _failure(self, request: AgentRequest, code: AgentErrorCode, message: str) -> AgentResponse:
+        if not response.success:
+            return SpecialistExecutionResult(
+                agent_name=agent_name,
+                success=False,
+                response=response,
+                error=response.error
+                or AgentError(
+                    code=AgentErrorCode.AGENT_EXECUTION_FAILED,
+                    message="The specialist reported that it could not complete the request.",
+                ),
+            )
+        return SpecialistExecutionResult(agent_name=agent_name, success=True, response=response)
+
+    @staticmethod
+    def _summarize(
+        selected: list[SpecialistAgentName],
+        results: list[SpecialistExecutionResult],
+    ) -> OrchestrationExecutionSummary:
+        successful = [result.agent_name for result in results if result.success]
+        failed = [result.agent_name for result in results if not result.success]
+        if not failed:
+            status = ExecutionStatus.COMPLETE
+        elif successful:
+            status = ExecutionStatus.PARTIAL_SUCCESS
+        else:
+            status = ExecutionStatus.FAILED
+        return OrchestrationExecutionSummary(
+            requested_agents=selected,
+            successful_agents=successful,
+            failed_agents=failed,
+            status=status,
+            results=results,
+        )
+
+    def _failure(
+        self,
+        request: AgentRequest,
+        code: AgentErrorCode,
+        message: str,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> AgentResponse:
         return AgentResponse(
             request_id=request.request_id,
             agent_name=self.name,
             success=False,
+            metadata=metadata or {},
             error=AgentError(code=code, message=message),
         )

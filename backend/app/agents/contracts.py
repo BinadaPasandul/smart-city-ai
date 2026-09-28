@@ -16,6 +16,7 @@ class AgentErrorCode(str, Enum):
     AGENT_EXECUTION_FAILED = "agent_execution_failed"
     TIMEOUT = "timeout"
     UNSUPPORTED_REQUEST = "unsupported_request"
+    NEEDS_CLARIFICATION = "needs_clarification"
 
 
 class AgentError(BaseModel):

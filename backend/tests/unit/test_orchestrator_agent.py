@@ -5,6 +5,7 @@ import pytest
 from app.agents.base import BaseAgent
 from app.agents.contracts import AgentErrorCode, AgentRequest, AgentResponse
 from app.agents.orchestrator.agent import CityOrchestratorAgent
+from app.agents.orchestrator.router import DeterministicQueryRouter
 from app.agents.registry import AgentRegistry
 
 
@@ -52,17 +53,16 @@ async def test_orchestrator_routes_to_registered_specialist_and_preserves_respon
     populated_registry: tuple[AgentRegistry, dict[str, FakeAgent]], query: str, name: str
 ) -> None:
     registry, agents = populated_registry
-    orchestrator = CityOrchestratorAgent(registry)
+    orchestrator = CityOrchestratorAgent(registry, DeterministicQueryRouter())
     request = AgentRequest(request_id=uuid4(), query=query)
 
     response = await orchestrator.execute(request)
 
-    assert response == AgentResponse(
-        request_id=request.request_id,
-        agent_name=name,
-        success=True,
-        answer=f"Handled by {name}",
-    )
+    assert response.request_id == request.request_id
+    assert response.agent_name == name
+    assert response.success is True
+    assert response.answer == f"Handled by {name}"
+    assert response.metadata["routing_method"] == "deterministic_fallback"
     assert agents[name].received == [request]
     assert orchestrator.name == "orchestrator"
     assert isinstance(orchestrator, BaseAgent)
@@ -70,7 +70,7 @@ async def test_orchestrator_routes_to_registered_specialist_and_preserves_respon
 
 @pytest.mark.asyncio
 async def test_unsupported_query_returns_structured_failure(populated_registry) -> None:
-    orchestrator = CityOrchestratorAgent(populated_registry[0])
+    orchestrator = CityOrchestratorAgent(populated_registry[0], DeterministicQueryRouter())
     request = AgentRequest(query="Write me a poem about space")
 
     response = await orchestrator.execute(request)
@@ -83,7 +83,7 @@ async def test_unsupported_query_returns_structured_failure(populated_registry) 
 
 @pytest.mark.asyncio
 async def test_unregistered_routed_specialist_returns_agent_not_found() -> None:
-    orchestrator = CityOrchestratorAgent(AgentRegistry())
+    orchestrator = CityOrchestratorAgent(AgentRegistry(), DeterministicQueryRouter())
     request = AgentRequest(query="Where can I park?")
 
     response = await orchestrator.execute(request)
@@ -96,7 +96,7 @@ async def test_unregistered_routed_specialist_returns_agent_not_found() -> None:
 async def test_specialist_exception_returns_safe_execution_failure() -> None:
     registry = AgentRegistry()
     registry.register(FakeAgent("mobility", fail=True))
-    orchestrator = CityOrchestratorAgent(registry)
+    orchestrator = CityOrchestratorAgent(registry, DeterministicQueryRouter())
     request = AgentRequest(query="Where can I park?")
 
     response = await orchestrator.execute(request)
@@ -110,7 +110,7 @@ async def test_specialist_exception_returns_safe_execution_failure() -> None:
 @pytest.mark.asyncio
 async def test_agents_are_routed_independently(populated_registry) -> None:
     registry, agents = populated_registry
-    orchestrator = CityOrchestratorAgent(registry)
+    orchestrator = CityOrchestratorAgent(registry, DeterministicQueryRouter())
 
     for query in ("bus route", "rain forecast", "police station"):
         await orchestrator.execute(AgentRequest(query=query))
