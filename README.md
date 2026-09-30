@@ -2,7 +2,7 @@
 
 ## Agentic Citizen Assistance System
 
-> **Status:** Backend foundation, shared agent protocol, and orchestration through Phase 3A are implemented. Specialist agent integrations and final answer synthesis are still future work.
+> **Status:** Backend foundation, shared agent protocol, orchestration, user-facing `/chat` endpoint, and the **Mobility Specialist Agent** (Traffic, Transit, Parking, EV Charging) with IR & NLP features are fully implemented.
 
 ### Project Overview
 
@@ -102,7 +102,7 @@ python -m scripts.verify_gemini_routing
 
 This live verification sends requests to Gemini and exercises structured single-agent routing, multi-agent routing, fake-agent orchestration, and deterministic fallback. Its Gemini results must be distinguished from successful fallback results.
 
-### Current Scope and Future Work
+### Current Scope and Implemented Features
 
 Implemented phases:
 
@@ -111,8 +111,9 @@ Implemented phases:
 3. **Phase 2A — Deterministic routing:** keyword-based classification and registry-based specialist dispatch.
 4. **Phase 2B — Gemini routing:** structured Gemini classification, clarification support, and deterministic fallback.
 5. **Phase 3A — Multi-agent orchestration:** multiple specialist selection, concurrent execution, timeouts, and partial-failure reporting.
+6. **Phase 3B — Mobility Agent Implementation:** Real domain specialist with `MobilityIRService`, `MobilityNLPAnalyzer`, seed mobility data (traffic, buses, trains, parking, EV charging), source attribution (`AgentSource`), and Responsible AI safeguards.
+7. **Phase 3C — Citizen Chat Endpoint:** `POST /api/v1/chat` public endpoint integrating client queries directly with Orchestrator dispatch.
 
-Not implemented yet: real specialist data retrieval, live traffic/weather/maps/public-service APIs, final answer synthesis, chat API endpoint, frontend, database, RAG/vector search, NLP/NER, authentication/authorization, and deployment. In particular, successful orchestration with fake agents is an architecture verification, not evidence that the system currently returns verified city facts.
 
 ### Responsible AI
 

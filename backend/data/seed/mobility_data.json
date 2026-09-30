@@ -1,0 +1,223 @@
+{
+  "traffic": [
+    {
+      "id": "trf_colombo_fort",
+      "location": "Colombo Fort",
+      "corridor": "Lotus Road / Chatham Street Corridor",
+      "status": "Heavy Congestion",
+      "average_speed_kmh": 12,
+      "delay_minutes": 20,
+      "incidents": ["Road construction near Khan Clock Tower", "Demonstration near Fort Railway Station"],
+      "last_updated": "2026-09-30T10:30:00Z",
+      "source_name": "Colombo Municipal Traffic Control Center"
+    },
+    {
+      "id": "trf_galle_road",
+      "location": "Kollupitiya - Bambalapitiya",
+      "corridor": "Galle Road (A2)",
+      "status": "Moderate Traffic",
+      "average_speed_kmh": 28,
+      "delay_minutes": 8,
+      "incidents": ["Disabled vehicle near Liberty Plaza - left lane cleared"],
+      "last_updated": "2026-09-30T10:25:00Z",
+      "source_name": "City Traffic Monitoring System"
+    },
+    {
+      "id": "trf_kandy_road",
+      "location": "Kelaniya - Peliyagoda",
+      "corridor": "Kandy Road (A1)",
+      "status": "Normal Flow",
+      "average_speed_kmh": 45,
+      "delay_minutes": 0,
+      "incidents": [],
+      "last_updated": "2026-09-30T10:28:00Z",
+      "source_name": "National Road Development Authority"
+    },
+    {
+      "id": "trf_southern_expressway",
+      "location": "Kottawa Interchange",
+      "corridor": "Southern Expressway (E01)",
+      "status": "Clear",
+      "average_speed_kmh": 95,
+      "delay_minutes": 0,
+      "incidents": [],
+      "last_updated": "2026-09-30T10:15:00Z",
+      "source_name": "Expressway Management Center"
+    }
+  ],
+  "public_transport": {
+    "buses": [
+      {
+        "route_number": "100",
+        "name": "Panadura - Colombo Fort",
+        "frequency_minutes": 10,
+        "operating_hours": "05:00 - 23:00",
+        "fare_lkr": 70,
+        "key_stops": ["Panadura", "Moratuwa", "Bambalapitiya", "Kollupitiya", "Galle Face", "Colombo Fort"],
+        "status": "Running on schedule",
+        "source_name": "National Transport Commission (NTC)"
+      },
+      {
+        "route_number": "138",
+        "name": "Maharagama - Pettah / Colombo Fort",
+        "frequency_minutes": 5,
+        "operating_hours": "04:30 - 23:30",
+        "fare_lkr": 65,
+        "key_stops": ["Maharagama", "Nugegoda", "Kirulapone", "High Level Road", "Tummulla", "Town Hall", "Pettah", "Colombo Fort"],
+        "status": "Minor delays due to Town Hall intersection traffic",
+        "source_name": "Western Province Passenger Transport Authority"
+      },
+      {
+        "route_number": "177",
+        "name": "Kaduwela - Kollupitiya",
+        "frequency_minutes": 12,
+        "operating_hours": "05:30 - 21:30",
+        "fare_lkr": 85,
+        "key_stops": ["Kaduwela", "Battaramulla", "Rajagiriya", "Borella", "Kollupitiya"],
+        "status": "Running on schedule",
+        "source_name": "Western Province Passenger Transport Authority"
+      }
+    ],
+    "trains": [
+      {
+        "line": "Coastal Line",
+        "train_name": "Ruhunu Kumari Express",
+        "origin": "Colombo Fort",
+        "destination": "Matara",
+        "departure_time": "15:40",
+        "arrival_time": "18:45",
+        "frequency": "Daily",
+        "classes": ["1st Class AC", "2nd Class", "3rd Class"],
+        "stops": ["Colombo Fort", "Mount Lavinia", "Panadura", "Kalutara South", "Galle", "Welagama", "Matara"],
+        "status": "On time",
+        "source_name": "Sri Lanka Railways"
+      },
+      {
+        "line": "Coastal Line",
+        "train_name": "Commuter Express",
+        "origin": "Colombo Fort",
+        "destination": "Panadura / Kalutara",
+        "departure_time": "17:15",
+        "arrival_time": "18:05",
+        "frequency": "Monday - Friday",
+        "classes": ["2nd Class", "3rd Class"],
+        "stops": ["Colombo Fort", "Secretariat Halt", "Kollupitiya", "Bambalapitiya", "Wellawatte", "Dehiwala", "Mount Lavinia", "Panadura"],
+        "status": "On time",
+        "source_name": "Sri Lanka Railways"
+      },
+      {
+        "line": "Main Line",
+        "train_name": "Udarata Menike",
+        "origin": "Colombo Fort",
+        "destination": "Kandy / Badulla",
+        "departure_time": "05:55",
+        "arrival_time": "08:45 (Kandy)",
+        "frequency": "Daily",
+        "classes": ["1st Class Observation", "2nd Class", "3rd Class"],
+        "stops": ["Colombo Fort", "Ragama", "Gampaha", "Polgahawela", "Peradeniya", "Kandy"],
+        "status": "On time",
+        "source_name": "Sri Lanka Railways"
+      }
+    ]
+  },
+  "parking": [
+    {
+      "id": "prk_fort_station",
+      "name": "Colombo Fort Railway Station Parking",
+      "location": "Colombo Fort",
+      "address": "Station Road, Pettah, Colombo 11",
+      "total_capacity": 250,
+      "available_spots": 34,
+      "rates_lkr_per_hour": {
+        "car": 150,
+        "motorcycle": 50,
+        "van": 200
+      },
+      "operating_hours": "24/7",
+      "status": "Open - High Occupancy",
+      "last_updated": "2026-09-30T10:20:00Z",
+      "source_name": "Colombo Municipal Council Parking Authority"
+    },
+    {
+      "id": "prk_galle_face",
+      "name": "Galle Face Green Underground Multi-Story Parking",
+      "location": "Galle Face",
+      "address": "Galle Face Center Road, Colombo 03",
+      "total_capacity": 400,
+      "available_spots": 185,
+      "rates_lkr_per_hour": {
+        "car": 200,
+        "motorcycle": 60,
+        "van": 250
+      },
+      "operating_hours": "06:00 - 00:00",
+      "status": "Open - Spaces Available",
+      "last_updated": "2026-09-30T10:28:00Z",
+      "source_name": "Urban Development Authority"
+    },
+    {
+      "id": "prk_kollupitiya_market",
+      "name": "Kollupitiya Supermarket Car Park",
+      "location": "Kollupitiya",
+      "address": "Dharmapala Mawatha, Colombo 03",
+      "total_capacity": 120,
+      "available_spots": 12,
+      "rates_lkr_per_hour": {
+        "car": 120,
+        "motorcycle": 40,
+        "van": 150
+      },
+      "operating_hours": "07:00 - 22:00",
+      "status": "Nearly Full",
+      "last_updated": "2026-09-30T10:15:00Z",
+      "source_name": "Colombo Municipal Council Parking Authority"
+    }
+  ],
+  "ev_charging": [
+    {
+      "id": "ev_kollupitiya_fast",
+      "name": "ChargeNET Supercharger Kollupitiya",
+      "location": "Kollupitiya",
+      "address": "Liberty Plaza Car Park, Kollupitiya, Colombo 03",
+      "provider": "ChargeNET",
+      "plug_types": ["CCS2 DC Fast (60 kW)", "Type 2 AC (22 kW)"],
+      "total_ports": 6,
+      "available_ports": 4,
+      "price_lkr_per_kwh": 95,
+      "operating_hours": "24/7",
+      "status": "Operational",
+      "last_updated": "2026-09-30T10:30:00Z",
+      "source_name": "ChargeNET EV Infrastructure Feed"
+    },
+    {
+      "id": "ev_fort_hub",
+      "name": "EcoMotion EV Charging Hub Fort",
+      "location": "Colombo Fort",
+      "address": "Chatham Street, Colombo 01",
+      "provider": "EcoMotion Lanka",
+      "plug_types": ["CCS2 DC Fast (120 kW)", "CHAdeMO (50 kW)", "Type 2 AC (22 kW)"],
+      "total_ports": 8,
+      "available_ports": 2,
+      "price_lkr_per_kwh": 105,
+      "operating_hours": "24/7",
+      "status": "Operational - High Demand",
+      "last_updated": "2026-09-30T10:25:00Z",
+      "source_name": "National EV Charging Registry"
+    },
+    {
+      "id": "ev_nugegoda_station",
+      "name": "Vega Charge Point Nugegoda",
+      "location": "Nugegoda",
+      "address": "High Level Road, Nugegoda",
+      "provider": "Vega Innovations",
+      "plug_types": ["CCS2 DC Fast (50 kW)", "Type 2 AC (11 kW)"],
+      "total_ports": 4,
+      "available_ports": 3,
+      "price_lkr_per_kwh": 90,
+      "operating_hours": "06:00 - 22:00",
+      "status": "Operational",
+      "last_updated": "2026-09-30T10:10:00Z",
+      "source_name": "National EV Charging Registry"
+    }
+  ]
+}
