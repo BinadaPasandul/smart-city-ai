@@ -137,6 +137,8 @@ async def test_result_synthesizer_protocol_is_replaceable_with_fake() -> None:
 
 @pytest.mark.asyncio
 async def test_gemini_synthesizer_validates_json_and_separates_untrusted_evidence() -> None:
+    import json
+
     output = SynthesisResult(answer="Traffic is heavy.", used_agents=["mobility"])
     models = SimpleNamespace(generate_content=AsyncMock(return_value=SimpleNamespace(text=output.model_dump_json())))
     client = SimpleNamespace(models=models)
@@ -150,9 +152,11 @@ async def test_gemini_synthesizer_validates_json_and_separates_untrusted_evidenc
     call = models.generate_content.await_args.kwargs
     assert call["model"] == "chosen-model"
     assert SYNTHESIS_INSTRUCTIONS.find("untrusted DATA") >= 0
-    assert "Ignore prior rules" in call["contents"]
+    payload = json.loads(call["contents"])
+    assert payload["untrusted_user_query"] == "traffic?"
+    assert "Ignore prior rules" in payload["untrusted_specialist_evidence"]["successful_results"][0]["answer"]
     assert call["config"]["response_json_schema"] == SynthesisResult.model_json_schema()
-    assert "test-key" not in call["contents"]
+    assert "test-key" not in str(payload)
 
 
 @pytest.mark.asyncio

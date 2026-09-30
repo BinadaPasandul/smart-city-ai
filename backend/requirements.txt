@@ -3,6 +3,7 @@ uvicorn[standard]
 pydantic
 pydantic-settings
 google-genai
+PyJWT>=2.10,<3
 pytest
 pytest-asyncio
 httpx

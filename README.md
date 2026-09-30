@@ -2,13 +2,13 @@
 
 ## Agentic Citizen Assistance System
 
-> **Status:** Backend foundation, shared agent protocol, and orchestration through Phase 3A are implemented. Specialist agent integrations and final answer synthesis are still future work.
+> **Status:** Backend foundation, agent protocol, orchestration, grounded synthesis, chat API, and an API security foundation are implemented. Real specialist integrations and token issuance remain future work.
 
 ### Project Overview
 
 This university project for **Information Retrieval and Web Analytics (IT 3041)** explores a citizen assistance system for transportation, environmental conditions, and public services.
 
-The backend currently provides a FastAPI application and an in-process multi-agent orchestration foundation. At this stage, Gemini classifies and routes requests; test-only fake specialists demonstrate execution. The system does not yet provide live city information or a user-facing chat endpoint.
+The backend currently provides a FastAPI application and an in-process multi-agent orchestration foundation. Gemini routes and synthesizes specialist results; fake specialists are used only in tests and verification. The system does not yet provide live city information or a frontend.
 
 ### Current Architecture
 
@@ -58,7 +58,9 @@ Concrete Mobility, Environment, and Public Services agents are not implemented y
 | Intelligent routing | Official Google Gen AI Python SDK (`google-genai`), structured routing output |
 | Gemini model | Configurable `GEMINI_MODEL`; default `gemini-3.5-flash-lite` |
 | Routing fallback | Deterministic keyword router |
-| Tests | pytest; normal test suite is offline and does not require a Gemini key |
+| Chat API | `POST /api/v1/chat`; `GET /api/v1/health` remains public |
+| API security | Optional JWT verification, bounded input/context, security headers, and in-memory chat rate limiting |
+| Tests | pytest; normal test suite is offline and does not require Gemini credentials |
 
 LangChain and LangGraph are not used. No internal HTTP, MCP, A2A, sockets, or message queues are used for agent communication.
 
@@ -72,10 +74,19 @@ Relevant settings include:
 |---|---|
 | `GEMINI_API_KEY` | Google Gen AI API credential; not required for application startup or offline tests |
 | `GEMINI_MODEL` | Gemini routing model; defaults to `gemini-3.5-flash-lite` |
+| `AUTH_ENABLED` | Enables JWT verification for chat when `true`; defaults to `false` for local development |
+| `JWT_SECRET` | HS256 verification secret; at least 32 characters and no obvious placeholder when auth is enabled |
+| `JWT_ALGORITHM`, `JWT_ISSUER`, `JWT_AUDIENCE` | JWT verification policy; only HS256 is allowed |
+| `CHAT_MAX_MESSAGE_LENGTH` | Maximum chat message size; default 5000 characters |
+| `CHAT_RATE_LIMIT_REQUESTS`, `CHAT_RATE_LIMIT_WINDOW_SECONDS` | Per-client or per-subject chat request window; defaults to 20 per 60 seconds |
 | `AGENT_EXECUTION_TIMEOUT_SECONDS` | Per-agent execution timeout |
 | `APP_NAME`, `APP_ENV`, `API_V1_PREFIX`, `LOG_LEVEL` | Application metadata, API prefix, and logging |
 | `CORS_ORIGINS` | Configured browser origins |
-| `DATABASE_URL`, `JWT_SECRET`, `JWT_ALGORITHM` | Reserved configuration values; database and authentication behavior are not implemented |
+| `DATABASE_URL` | Reserved configuration; database behavior is not implemented |
+
+When `AUTH_ENABLED=true`, `POST /api/v1/chat` requires a valid Bearer JWT with `exp`, `sub`, configured issuer, and audience. `GET /api/v1/health` stays public. No login, user store, or token-issuing endpoint is provided. With auth disabled, chat can be used locally without a token.
+
+The in-memory rate limiter is for development and a single application process only; it is not shared across workers or servers. Local development uses HTTP. Deployed traffic must use HTTPS/TLS, normally terminated by the hosting platform or reverse proxy. JWT signing does not encrypt traffic.
 
 ### Run the Backend
 
@@ -86,7 +97,7 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload
 ```
 
-The application health endpoint is `GET http://127.0.0.1:8000/api/v1/health`. There is not yet a public chat or agent endpoint.
+The health endpoint is `GET http://127.0.0.1:8000/api/v1/health`; chat requests use `POST http://127.0.0.1:8000/api/v1/chat`. Set a strong `JWT_SECRET`, issuer, audience, and `AUTH_ENABLED=true` before enabling authentication outside local development.
 
 Run the automated tests from `backend/`:
 
@@ -111,8 +122,11 @@ Implemented phases:
 3. **Phase 2A — Deterministic routing:** keyword-based classification and registry-based specialist dispatch.
 4. **Phase 2B — Gemini routing:** structured Gemini classification, clarification support, and deterministic fallback.
 5. **Phase 3A — Multi-agent orchestration:** multiple specialist selection, concurrent execution, timeouts, and partial-failure reporting.
+6. **Phase 3B — Grounded synthesis:** combines successful specialist evidence and falls back deterministically.
+7. **Phase 4 — Chat API:** validates public requests, maps safe responses, and exposes the shared Orchestrator through FastAPI.
+8. **Phase 5 — Security foundation:** optional JWT verification, input/context limits, prompt/data separation, CORS restrictions, response headers, and per-process rate limiting.
 
-Not implemented yet: real specialist data retrieval, live traffic/weather/maps/public-service APIs, final answer synthesis, chat API endpoint, frontend, database, RAG/vector search, NLP/NER, authentication/authorization, and deployment. In particular, successful orchestration with fake agents is an architecture verification, not evidence that the system currently returns verified city facts.
+Not implemented yet: real specialist data retrieval, live traffic/weather/maps/public-service APIs, frontend, database, RAG/vector search, NLP/NER, user management, login/token issuance, roles/authorization, distributed rate limiting, and deployment. In particular, successful orchestration with fake agents is an architecture verification, not evidence that the system currently returns verified city facts. Authentication verifies externally issued JWTs only.
 
 ### Responsible AI
 

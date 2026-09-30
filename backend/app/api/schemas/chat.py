@@ -1,7 +1,10 @@
 """Stable public DTOs for the chat HTTP boundary."""
 
 from datetime import datetime
-from typing import Any
+import json
+import math
+from typing import Any, ClassVar
+import unicodedata
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -18,12 +21,67 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=settings.chat_max_message_length)
     context: dict[str, Any] = Field(default_factory=dict)
 
+    MAX_CONTEXT_KEYS: ClassVar[int] = 32
+    MAX_CONTEXT_KEY_LENGTH: ClassVar[int] = 64
+    MAX_CONTEXT_STRING_LENGTH: ClassVar[int] = 1024
+    MAX_CONTEXT_DEPTH: ClassVar[int] = 4
+    MAX_CONTEXT_LIST_ITEMS: ClassVar[int] = 100
+    MAX_CONTEXT_BYTES: ClassVar[int] = 8192
+
     @field_validator("message")
     @classmethod
     def trim_and_require_message(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("message must not be blank")
+        if any(
+            unicodedata.category(char) == "Cc" and char not in "\t\r\n"
+            for char in value
+        ):
+            raise ValueError("message contains unsupported control characters")
+        return value
+
+    @field_validator("context")
+    @classmethod
+    def validate_untrusted_context(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(value) > cls.MAX_CONTEXT_KEYS:
+            raise ValueError("context contains too many keys")
+
+        def validate_value(item: Any, depth: int) -> None:
+            if depth > cls.MAX_CONTEXT_DEPTH:
+                raise ValueError("context is nested too deeply")
+            if isinstance(item, str):
+                if len(item) > cls.MAX_CONTEXT_STRING_LENGTH:
+                    raise ValueError("context string value is too long")
+            elif isinstance(item, dict):
+                if len(item) > cls.MAX_CONTEXT_KEYS:
+                    raise ValueError("nested context contains too many keys")
+                for key, nested in item.items():
+                    if not isinstance(key, str) or not key or len(key) > cls.MAX_CONTEXT_KEY_LENGTH:
+                        raise ValueError("context keys must be nonempty strings of at most 64 characters")
+                    validate_value(nested, depth + 1)
+            elif isinstance(item, list):
+                if len(item) > cls.MAX_CONTEXT_LIST_ITEMS:
+                    raise ValueError("context list contains too many items")
+                for nested in item:
+                    validate_value(nested, depth + 1)
+            elif isinstance(item, float) and not math.isfinite(item):
+                raise ValueError("context numbers must be finite")
+            elif item is None or isinstance(item, (bool, int, float)):
+                return
+            else:
+                raise ValueError("context values must be JSON-compatible")
+
+        for key, item in value.items():
+            if not key or len(key) > cls.MAX_CONTEXT_KEY_LENGTH:
+                raise ValueError("context keys must be nonempty strings of at most 64 characters")
+            validate_value(item, 1)
+        try:
+            serialized = json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("context must contain only JSON-compatible values") from exc
+        if len(serialized) > cls.MAX_CONTEXT_BYTES:
+            raise ValueError("context is too large")
         return value
 
 
