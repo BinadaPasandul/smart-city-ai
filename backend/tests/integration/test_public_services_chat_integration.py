@@ -6,9 +6,11 @@ pipeline runs), through the real orchestrator and the real /chat endpoint.
 
 Routing is fixed via an injected router -- the same dependency-injection
 pattern already used by `backend/tests/integration/test_chat_api.py` --
-rather than depending on a live Gemini key or on the deterministic keyword
-router recognizing every example phrase (see the Step 6 report's "Issues
-discovered" for a documented gap this sidesteps without being modified).
+rather than depending on a live Gemini key. (Step 6's report flagged that
+the real `DeterministicQueryRouter` did not yet recognize everyday
+complaint phrasing like "streetlight"; Step 7 closed that gap in
+`router.py`, and the tests at the bottom of this file exercise the real
+router directly to prove it.)
 """
 
 import pytest
@@ -17,7 +19,12 @@ from fastapi.testclient import TestClient
 from app.agents.base import BaseAgent
 from app.agents.contracts import AgentRequest, AgentResponse
 from app.agents.orchestrator.agent import CityOrchestratorAgent
-from app.agents.orchestrator.router import RoutingDecision, RoutingResult, SpecialistAgentName
+from app.agents.orchestrator.router import (
+    DeterministicQueryRouter,
+    RoutingDecision,
+    RoutingResult,
+    SpecialistAgentName,
+)
 from app.agents.orchestrator.synthesizer import DeterministicResultSynthesizer
 from app.api.dependencies import get_orchestrator
 from app.core.bootstrap import create_agent_registry
@@ -175,3 +182,53 @@ def test_registered_public_services_agent_no_longer_returns_agent_not_found(clie
     assert body["success"] is True
     assert body["error"] is None
     assert "agent_not_found" not in response.text
+
+
+# ---------------------------------------------------------------------------
+# Step 7: the real deterministic router (no Gemini) must now route the
+# previously-unrecognized citizen-complaint phrasing to public_services.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_streetlight_complaint_routes_through_real_deterministic_router() -> None:
+    """Reproduces the originally-reported routing gap end-to-end, without Gemini.
+
+    Calls the real orchestrator directly (not through FastAPI) because the
+    public ChatResponse schema intentionally allowlists away the agent-level
+    `category`/`complaint_type` metadata this test checks (see
+    `ChatMetadata.from_agent_metadata`); the registry, agent, NLP, and IR are
+    all real and unmodified.
+    """
+    registry = create_agent_registry()
+    orchestrator = CityOrchestratorAgent(registry, DeterministicQueryRouter())
+    request = AgentRequest(query="I want to report a broken streetlight")
+
+    response = await orchestrator.execute(request)
+
+    assert response.success is True
+    assert response.metadata["routing_method"] == "deterministic_fallback"
+    assert response.metadata["selected_agents"] == ["public_services"]
+    assert response.metadata["successful_agents"] == ["public_services"]
+    assert response.metadata["category"] == "citizen_complaints"
+    assert response.metadata["complaint_type"] == "streetlight_malfunction"
+    assert any(source.name == "public_services_data.json" for source in response.sources)
+    assert any(source.source_type == "synthetic_demo" for source in response.sources)
+
+
+def test_chat_streetlight_complaint_routes_without_gemini(client_with_orchestrator) -> None:
+    """Same gap, verified at the public /chat HTTP boundary."""
+    client, override = client_with_orchestrator
+    registry = create_agent_registry()
+    override(CityOrchestratorAgent(registry, DeterministicQueryRouter()))
+
+    response = client.post("/api/v1/chat", json={"message": "I want to report a broken streetlight"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["metadata"]["routing_method"] == "deterministic_fallback"
+    assert body["metadata"]["selected_agents"] == ["public_services"]
+    assert body["metadata"]["successful_agents"] == ["public_services"]
+    assert body["sources"][0]["name"] == "public_services_data.json"
+    assert body["sources"][0]["metadata"]["category"] == "citizen_complaints"
