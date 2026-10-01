@@ -8,6 +8,7 @@ from pydantic import SecretStr, ValidationError
 from app.agents.base import BaseAgent
 from app.agents.contracts import AgentErrorCode, AgentRequest, AgentResponse
 from app.agents.orchestrator.agent import CityOrchestratorAgent
+from app.agents.orchestrator.context_adapter import SpecialistContextAdapter
 from app.agents.orchestrator.gemini_router import (
     GeminiQueryRouter,
     GeminiRoutingError,
@@ -24,7 +25,11 @@ from app.nlp.entities import EntityModelUnavailable
 from app.nlp.intent import LocalIntentClassifier
 from app.nlp.models import NlpAnalysisResult, UnderstandingDecision
 from app.nlp.normalizer import normalize_text
-from app.nlp.pipeline import LocalNlpAnalyzer, RequestUnderstandingPipeline
+from app.nlp.pipeline import (
+    LocalNlpAnalyzer,
+    RequestCompletenessEvaluator,
+    RequestUnderstandingPipeline,
+)
 from app.nlp.temporal import DateparserTemporalExtractor
 
 
@@ -58,8 +63,8 @@ class FakeGeminiUnderstander:
         self.error = error
         self.calls = []
 
-    async def understand(self, query, *, local_analysis=None, request_id=None):
-        self.calls.append((query, local_analysis, request_id))
+    async def understand(self, query, *, local_analysis=None, request_id=None, retry_correction=None):
+        self.calls.append((query, local_analysis, request_id, retry_correction))
         if self.error:
             raise self.error
         return self.decision
@@ -231,16 +236,22 @@ async def test_confident_local_requests_do_not_call_gemini(query, locations, tim
 
 @pytest.mark.asyncio
 async def test_unrecognized_absolute_place_is_reported_but_clear_intent_stays_local():
-    gemini = FakeGeminiUnderstander(error=AssertionError("clear weather intent should stay local"))
+    gemini = FakeGeminiUnderstander(
+        decision(
+            [SpecialistAgentName.ENVIRONMENT],
+            locations=["Kandy"],
+            confidence=0.95,
+        )
+    )
     result = await RequestUnderstandingPipeline(
         analyzer=analyzer(), gemini_router=gemini, settings=settings(),
     ).route("Will it rain in Kandy?")
-    assert result.routing_method == "local_nlp"
+    assert result.routing_method == "gemini"
     assert result.decision.agent_names == [SpecialistAgentName.ENVIRONMENT]
-    assert result.locations == []
-    assert result.missing_information == [MissingInformation.LOCATION]
+    assert result.locations == ["Kandy"]
+    assert result.gemini_understanding_fallback_used is True
     assert result.local_nlp_confidence == 0.86
-    assert gemini.calls == []
+    assert len(gemini.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -259,6 +270,101 @@ async def test_confidence_threshold_is_configurable():
     assert (await low_threshold.route("traffic?")).routing_method == "local_nlp"
     assert (await high_threshold.route("traffic?")).understanding_method == "gemini_fallback"
     assert len(high_threshold_gemini.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "How is traffic on Marine Drive?",
+        "What's traffic like around Marine Drive?",
+        "Traffic near Marine Drive right now",
+    ],
+)
+@pytest.mark.asyncio
+async def test_location_specific_mobility_miss_uses_gemini_entity_fallback(query):
+    gemini = FakeGeminiUnderstander(
+        decision([SpecialistAgentName.MOBILITY], locations=["Marine Drive"])
+    )
+    analysis = analyzer().analyze(query)
+    evaluator = RequestCompletenessEvaluator()
+    assert analysis.candidate_agents == [SpecialistAgentName.MOBILITY]
+    assert analysis.locations == []
+    assert evaluator.fallback_reason(
+        analysis, has_user_location=False, confidence_threshold=0.80
+    ) == "location_specific_query_missing_location"
+
+    request = AgentRequest(query=query, request_id=uuid4())
+    result = await RequestUnderstandingPipeline(
+        analyzer=analyzer(), gemini_router=gemini, settings=settings(),
+    ).route_request(request)
+
+    assert result.gemini_understanding_fallback_used is True
+    assert result.decision.agent_names == [SpecialistAgentName.MOBILITY]
+    assert result.locations == ["Marine Drive"]
+    assert result.decision.needs_clarification is False
+    assert gemini.calls[0][0] == query
+    assert gemini.calls[0][1]["reason_for_fallback"] == "location_specific_query_missing_location"
+    assert gemini.calls[0][2] == str(request.request_id)
+    assert request.query == query
+
+
+@pytest.mark.asyncio
+async def test_generic_mobility_question_without_location_skips_gemini():
+    gemini = FakeGeminiUnderstander(error=AssertionError("generic question is complete"))
+    result = await RequestUnderstandingPipeline(
+        analyzer=analyzer(), gemini_router=gemini, settings=settings(),
+    ).route("What causes traffic congestion?")
+
+    assert result.routing_method == "local_nlp"
+    assert result.decision.agent_names == [SpecialistAgentName.MOBILITY]
+    assert result.locations == []
+    assert gemini.calls == []
+
+
+@pytest.mark.asyncio
+async def test_environment_requires_location_after_gemini_failure():
+    result = await RequestUnderstandingPipeline(
+        analyzer=analyzer(),
+        gemini_router=FakeGeminiUnderstander(
+            error=GeminiRoutingError("api_key_unavailable")
+        ),
+        settings=settings(),
+    ).route("What is the weather today?")
+
+    assert result.decision.needs_clarification is True
+    assert result.decision.agent_names == []
+    assert MissingInformation.LOCATION in result.decision.missing_information
+
+
+@pytest.mark.asyncio
+async def test_environment_user_location_satisfies_completeness_without_gemini():
+    gemini = FakeGeminiUnderstander(error=AssertionError("validated user location is present"))
+    request = AgentRequest(
+        query="What is the weather today?",
+        context={"user_context": {"location": "Colombo"}},
+    )
+    result = await RequestUnderstandingPipeline(
+        analyzer=analyzer(), gemini_router=gemini, settings=settings(),
+    ).route_request(request)
+
+    assert result.routing_method == "local_nlp"
+    assert result.decision.agent_names == [SpecialistAgentName.ENVIRONMENT]
+    assert gemini.calls == []
+
+
+@pytest.mark.asyncio
+async def test_environment_multiple_extracted_locations_requests_clarification():
+    gemini = FakeGeminiUnderstander(error=AssertionError("multiple places need clarification"))
+    result = await RequestUnderstandingPipeline(
+        analyzer=analyzer(locations=["Colombo", "Kandy"]),
+        gemini_router=gemini,
+        settings=settings(),
+    ).route("Compare weather in Colombo and Kandy")
+
+    assert result.decision.needs_clarification is True
+    assert result.decision.agent_names == []
+    assert result.locations == ["Colombo", "Kandy"]
+    assert gemini.calls == []
 
 
 @pytest.mark.asyncio
@@ -285,11 +391,14 @@ async def test_low_confidence_uses_structured_gemini_and_propagates_entities():
 @pytest.mark.asyncio
 async def test_gemini_multi_agent_decision_is_accepted_and_stably_ordered():
     gemini = FakeGeminiUnderstander(
-        decision([SpecialistAgentName.ENVIRONMENT, SpecialistAgentName.MOBILITY])
+        decision(
+            [SpecialistAgentName.ENVIRONMENT, SpecialistAgentName.MOBILITY],
+            locations=["Colombo"],
+        )
     )
     result = await RequestUnderstandingPipeline(
         analyzer=analyzer(), gemini_router=gemini, settings=settings(),
-    ).route("Would both of those affect my plans?")
+    ).route("Would traffic and air quality in Colombo affect my plans?")
     assert [name.value for name in result.decision.agent_names] == ["mobility", "environment"]
     assert result.understanding_method == "gemini_fallback"
 
@@ -388,15 +497,18 @@ async def test_ungrounded_gemini_location_is_rejected_without_inventing_place():
 
 @pytest.mark.asyncio
 async def test_gemini_exception_keeps_obvious_deterministic_fallback_and_reports_method():
+    gemini = FakeGeminiUnderstander(error=GeminiRoutingError("timeout"))
     result = await RequestUnderstandingPipeline(
         analyzer=analyzer(),
-        gemini_router=FakeGeminiUnderstander(error=GeminiRoutingError("timeout")),
+        gemini_router=gemini,
         settings=settings(nlp_local_confidence_threshold=0.81),
     ).route("parking")
     assert result.routing_method == "deterministic_fallback"
     assert result.understanding_method == "deterministic_fallback"
     assert result.gemini_understanding_fallback_used is False
     assert result.decision.agent_names == [SpecialistAgentName.MOBILITY]
+    assert result.gemini_attempt_count == 1
+    assert result.gemini_retry_triggered is False
 
 
 @pytest.mark.asyncio
@@ -419,7 +531,75 @@ async def test_gemini_failure_on_missing_location_returns_clarification():
     ).route("Is it okay there later?")
     assert result.decision.needs_clarification is True
     assert MissingInformation.LOCATION in result.decision.missing_information
-    assert result.understanding_method == "clarification"
+
+
+@pytest.mark.asyncio
+async def test_explicit_location_missed_then_recovered_with_one_constrained_retry():
+    class SequenceUnderstander:
+        def __init__(self):
+            self.calls = []
+
+        async def understand(self, query, *, local_analysis=None, request_id=None, retry_correction=None):
+            self.calls.append(retry_correction)
+            if len(self.calls) == 1:
+                return decision(
+                    [], clarification=True,
+                    missing=[MissingInformation.LOCATION],
+                )
+            return decision(
+                [SpecialistAgentName.MOBILITY], locations=["Marine Drive"], confidence=0.95
+            )
+
+    gemini = SequenceUnderstander()
+    result = await RequestUnderstandingPipeline(
+        analyzer=analyzer(), gemini_router=gemini, settings=settings(),
+    ).route("How is traffic on Marine Drive?")
+    assert result.locations == ["Marine Drive"]
+    assert result.decision.agent_names == [SpecialistAgentName.MOBILITY]
+    assert result.gemini_attempt_count == 2
+    assert result.gemini_retry_triggered is True
+    assert result.gemini_retry_reason == "required_entity_missing"
+    assert gemini.calls[0] is None
+    assert gemini.calls[1]["validation_issue"] == "required_entity_missing"
+    assert "do not invent a place" in gemini.calls[1]["instruction"]
+
+
+@pytest.mark.asyncio
+async def test_genuine_deictic_clarification_is_accepted_without_retry():
+    gemini = FakeGeminiUnderstander(decision(
+        [], clarification=True, missing=[MissingInformation.LOCATION]
+    ))
+    result = await RequestUnderstandingPipeline(
+        analyzer=analyzer(), gemini_router=gemini, settings=settings(),
+    ).route("How is the traffic there?")
+    assert result.decision.needs_clarification is True
+    assert result.gemini_attempt_count == 1
+    assert result.gemini_retry_triggered is False
+    assert gemini.calls[0][3] is None
+
+
+@pytest.mark.asyncio
+async def test_two_understanding_structured_failures_use_deterministic_fallback():
+    class SequenceUnderstander:
+        def __init__(self):
+            self.calls = []
+
+        async def understand(self, query, *, local_analysis=None, request_id=None, retry_correction=None):
+            self.calls.append(retry_correction)
+            if retry_correction is None:
+                raise GeminiRoutingError("invalid_structured_output")
+            raise GeminiRoutingError("invalid_structured_output")
+
+    gemini = SequenceUnderstander()
+    result = await RequestUnderstandingPipeline(
+        analyzer=analyzer(), gemini_router=gemini, settings=settings(),
+    ).route("Can I park in Marine Drive?")
+    assert len(gemini.calls) == 2
+    assert result.decision.agent_names == [SpecialistAgentName.MOBILITY]
+    assert result.gemini_attempt_count == 2
+    assert result.gemini_retry_triggered is True
+    assert result.gemini_final_status == "invalid_structured_output"
+    assert result.understanding_method == "deterministic_fallback"
 
 
 @pytest.mark.asyncio
@@ -520,7 +700,9 @@ async def test_city_orchestrator_passes_same_enriched_original_request_to_multi_
     assert response.metadata["gemini_understanding_fallback_used"] is False
     assert mobility.requests[0].query == environment.requests[0].query == query
     assert mobility.requests[0].request_id == environment.requests[0].request_id == original_id
-    assert mobility.requests[0].context == environment.requests[0].context
+    assert mobility.requests[0].context["nlp"] == environment.requests[0].context["nlp"]
+    assert "location" not in mobility.requests[0].context
+    assert environment.requests[0].context["location"] == "Colombo"
     assert mobility.requests[0].context["nlp"]["locations"] == ["Colombo"]
     assert mobility.requests[0].context["nlp"]["temporal_expressions"] == ["today"]
     assert mobility.requests[0].context["user_context"] == {"language": "en"}
@@ -611,10 +793,22 @@ def test_chat_metadata_allowlists_new_understanding_fields():
             "understanding_method": "local_nlp",
             "nlp_confidence": 0.94,
             "gemini_understanding_fallback_used": False,
+            "gemini_attempt_count": 2,
+            "gemini_first_attempt_status": "invalid_structured_output",
+            "gemini_retry_triggered": True,
+            "gemini_retry_reason": "invalid_structured_output",
+            "gemini_final_status": "valid",
+            "gemini_synthesis_attempt_count": 1,
+            "gemini_synthesis_first_attempt_status": "valid",
+            "gemini_synthesis_retry_triggered": False,
+            "synthesis_method": "gemini",
             "raw_spacy_doc": "must not appear",
         }
     )
     assert metadata.understanding_method == "local_nlp"
     assert metadata.nlp_confidence == 0.94
     assert metadata.gemini_understanding_fallback_used is False
+    assert metadata.gemini_attempt_count == 2
+    assert metadata.gemini_retry_triggered is True
+    assert metadata.gemini_synthesis_attempt_count == 1
     assert "raw_spacy_doc" not in metadata.model_dump()

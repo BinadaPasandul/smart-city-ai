@@ -26,8 +26,10 @@ from app.agents.orchestrator.router import (
     SpecialistAgentName,
 )
 from app.agents.orchestrator.synthesizer import DeterministicResultSynthesizer
+from app.agents.public_services.agent import PublicServicesAgent
 from app.api.dependencies import get_orchestrator
 from app.core.bootstrap import create_agent_registry
+from app.agents.registry import AgentRegistry
 from app.main import app
 
 
@@ -147,8 +149,11 @@ def test_chat_citizen_complaint_query_executes_real_public_services_agent(client
 
 
 def test_public_services_participates_in_multi_agent_selection(client_with_orchestrator) -> None:
-    registry = create_agent_registry()
+    # This test needs a fake mobility implementation beside the real public
+    # services agent, so keep it isolated from the populated app registry.
+    registry = AgentRegistry()
     registry.register(_FakeMobilityAgent())
+    registry.register(PublicServicesAgent())
     orchestrator = CityOrchestratorAgent(
         registry,
         _FixedRouter([SpecialistAgentName.MOBILITY, SpecialistAgentName.PUBLIC_SERVICES]),

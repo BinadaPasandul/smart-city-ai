@@ -11,6 +11,10 @@ from app.agents.orchestrator.execution import (
     OrchestrationExecutionSummary,
     SpecialistExecutionResult,
 )
+from app.agents.orchestrator.context_adapter import (
+    AmbiguousSpecialistContext,
+    SpecialistContextAdapter,
+)
 from app.agents.orchestrator.router import (
     QueryRouter,
     RoutingResult,
@@ -46,6 +50,7 @@ class CityOrchestratorAgent(BaseAgent):
             capabilities=("gemini_routing", "deterministic_fallback", "parallel_execution"),
         )
         self._registry = registry
+        self._context_adapter = SpecialistContextAdapter()
         self._web_search = web_search or WebSearchService(None, enabled=False)
         self._synthesizer = FallbackResultSynthesizer(
             synthesizer or GeminiResultSynthesizer(
@@ -71,7 +76,13 @@ class CityOrchestratorAgent(BaseAgent):
         if not request.query.strip():
             return self._failure(request, AgentErrorCode.INVALID_REQUEST, "The request query must not be empty.")
 
-        routing = await self._router.route(request.query, request_id=str(request.request_id))
+        route_request = getattr(self._router, "route_request", None)
+        if callable(route_request):
+            routing = await route_request(request)
+        else:
+            routing = await self._router.route(
+                request.query, request_id=str(request.request_id)
+            )
         decision = routing.decision
         understanding_method = routing.understanding_method or routing.routing_method
         routing_metadata = {
@@ -79,6 +90,11 @@ class CityOrchestratorAgent(BaseAgent):
             "understanding_method": understanding_method,
             "nlp_confidence": routing.local_nlp_confidence,
             "gemini_understanding_fallback_used": routing.gemini_understanding_fallback_used,
+            "gemini_attempt_count": routing.gemini_attempt_count,
+            "gemini_first_attempt_status": routing.gemini_first_attempt_status,
+            "gemini_retry_triggered": routing.gemini_retry_triggered,
+            "gemini_retry_reason": routing.gemini_retry_reason,
+            "gemini_final_status": routing.gemini_final_status,
         }
 
         if decision.needs_clarification:
@@ -104,8 +120,23 @@ class CityOrchestratorAgent(BaseAgent):
             [agent.value for agent in selected],
         )
         specialist_request = self._enrich_request(request, routing)
+        try:
+            adapted_requests = {
+                name: self._context_adapter.adapt(name.value, specialist_request)
+                for name in selected
+            }
+        except AmbiguousSpecialistContext:
+            return self._failure(
+                request,
+                AgentErrorCode.NEEDS_CLARIFICATION,
+                "Please provide one location for the environmental request.",
+                metadata=routing_metadata | {
+                    "selected_agents": [agent.value for agent in selected],
+                    "execution_status": ExecutionStatus.FAILED.value,
+                },
+            )
         results = await asyncio.gather(
-            *(self._execute_specialist(name, specialist_request) for name in selected)
+            *(self._execute_specialist(name, adapted_requests[name]) for name in selected)
         )
         summary = self._summarize(selected, results)
         search_outcome = await self._web_search.run(
@@ -195,6 +226,11 @@ class CityOrchestratorAgent(BaseAgent):
             metadata["synthesis_method"] = synthesis_method
             metadata["synthesis_used_agents"] = [name.value for name in synthesis_result.used_agents]
             metadata["synthesis_limitations"] = synthesis_result.limitations
+            metadata["gemini_synthesis_attempt_count"] = synthesis_result.gemini_attempt_count
+            metadata["gemini_synthesis_first_attempt_status"] = synthesis_result.gemini_first_attempt_status
+            metadata["gemini_synthesis_retry_triggered"] = synthesis_result.gemini_retry_triggered
+            metadata["gemini_synthesis_retry_reason"] = synthesis_result.gemini_retry_reason
+            metadata["gemini_synthesis_final_status"] = synthesis_result.gemini_final_status
             logger.info(
                 "Synthesis finished request_id=%s method=%s successful_results=%d",
                 request.request_id,
@@ -346,22 +382,22 @@ class CityOrchestratorAgent(BaseAgent):
     @staticmethod
     def _enrich_request(request: AgentRequest, routing: RoutingResult) -> AgentRequest:
         """Copy the request and attach server-derived NLP facts before fan-out."""
-        if (
-            routing.understanding_method is None
-            and routing.local_nlp_confidence is None
-            and not routing.locations
-            and not routing.temporal_expressions
-        ):
-            return request.model_copy(deep=True)
         context = {
             key: value for key, value in request.context.items()
             if key != "nlp"
         }
-        context["nlp"] = {
-            "locations": list(routing.locations),
-            "temporal_expressions": list(routing.temporal_expressions),
-            "missing_information": [item.value for item in routing.missing_information],
-            "understanding_method": routing.understanding_method or routing.routing_method,
-            "confidence": routing.local_nlp_confidence,
-        }
+        has_understanding = (
+            routing.understanding_method is not None
+            or routing.local_nlp_confidence is not None
+            or bool(routing.locations)
+            or bool(routing.temporal_expressions)
+        )
+        if has_understanding:
+            context["nlp"] = {
+                "locations": list(routing.locations),
+                "temporal_expressions": list(routing.temporal_expressions),
+                "missing_information": [item.value for item in routing.missing_information],
+                "understanding_method": routing.understanding_method or routing.routing_method,
+                "confidence": routing.local_nlp_confidence,
+            }
         return request.model_copy(update={"context": context}, deep=True)

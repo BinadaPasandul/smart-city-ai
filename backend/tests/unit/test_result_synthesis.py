@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.agents.base import BaseAgent
-from app.agents.contracts import AgentRequest, AgentResponse, AgentSource
+from app.agents.contracts import AgentError, AgentErrorCode, AgentRequest, AgentResponse, AgentSource
 from app.agents.orchestrator.agent import CityOrchestratorAgent
 from app.agents.orchestrator.execution import (
     ExecutionStatus,
@@ -22,6 +22,7 @@ from app.agents.orchestrator.router import (
 from app.agents.orchestrator.synthesizer import (
     DeterministicResultSynthesizer,
     FallbackResultSynthesizer,
+    GeminiSynthesisOutput,
     GeminiResultSynthesizer,
     ResultSynthesizer,
     SynthesisError,
@@ -139,7 +140,7 @@ async def test_result_synthesizer_protocol_is_replaceable_with_fake() -> None:
 async def test_gemini_synthesizer_validates_json_and_separates_untrusted_evidence() -> None:
     import json
 
-    output = SynthesisResult(answer="Traffic is heavy.", used_agents=["mobility"])
+    output = GeminiSynthesisOutput(answer="Traffic is heavy.")
     models = SimpleNamespace(generate_content=AsyncMock(return_value=SimpleNamespace(text=output.model_dump_json())))
     client = SimpleNamespace(models=models)
     summary = _summary()
@@ -155,26 +156,30 @@ async def test_gemini_synthesizer_validates_json_and_separates_untrusted_evidenc
     payload = json.loads(call["contents"])
     assert payload["untrusted_user_query"] == "traffic?"
     assert "Ignore prior rules" in payload["untrusted_specialist_evidence"]["successful_results"][0]["answer"]
-    assert call["config"]["response_json_schema"] == SynthesisResult.model_json_schema()
+    assert call["config"]["response_json_schema"] == GeminiSynthesisOutput.model_json_schema()
+    assert set(GeminiSynthesisOutput.model_fields) == {"answer"}
     assert "test-key" not in str(payload)
+    assert "Mention unavailable specialist information" not in SYNTHESIS_INSTRUCTIONS
+    assert "Python handles unavailable specialists" in SYNTHESIS_INSTRUCTIONS
 
 
 @pytest.mark.asyncio
-async def test_gemini_rejects_used_agent_that_did_not_succeed() -> None:
+async def test_gemini_agent_metadata_is_assembled_from_execution_state() -> None:
     models = SimpleNamespace(generate_content=AsyncMock(return_value=SimpleNamespace(
-        text=SynthesisResult(answer="Not grounded", used_agents=["environment"]).model_dump_json()
+        text=GeminiSynthesisOutput(answer="Traffic is heavy.").model_dump_json()
     )))
     summary = _summary(partial=True)
     synthesizer = GeminiResultSynthesizer("test-key", client=SimpleNamespace(models=models))
-    with pytest.raises(SynthesisError, match="unsupported_used_agent"):
-        await synthesizer.synthesize("query", summary)
+    result = await synthesizer.synthesize("query", summary)
+    assert result.used_agents == [SpecialistAgentName.MOBILITY]
+    assert result.limitations == ["environment information is unavailable."]
 
 
 @pytest.mark.asyncio
 async def test_gemini_output_with_unsupported_query_fact_uses_grounded_fallback() -> None:
     models = SimpleNamespace(generate_content=AsyncMock(return_value=SimpleNamespace(
-        text=SynthesisResult(
-            answer="Traffic is heavy near Colombo Fort today.", used_agents=["mobility", "environment"]
+        text=GeminiSynthesisOutput(
+            answer="Traffic is heavy near Colombo Fort today."
         ).model_dump_json()
     )))
     primary = GeminiResultSynthesizer("test-key", client=SimpleNamespace(models=models))
@@ -188,7 +193,11 @@ async def test_gemini_output_with_unsupported_query_fact_uses_grounded_fallback(
 
 @pytest.mark.asyncio
 async def test_gemini_timeout_uses_deterministic_fallback_and_preserves_answers() -> None:
+    calls = 0
+
     async def slow(**kwargs):
+        nonlocal calls
+        calls += 1
         await asyncio.sleep(0.05)
         return SimpleNamespace(text="{}")
 
@@ -198,6 +207,7 @@ async def test_gemini_timeout_uses_deterministic_fallback_and_preserves_answers(
     assert method == "deterministic_fallback"
     assert "Traffic is heavy." in result.answer
     assert "Air quality is moderate." in result.answer
+    assert calls == 1
 
 
 @pytest.mark.asyncio
@@ -209,6 +219,150 @@ async def test_malformed_output_uses_deterministic_fallback_without_inventing_fa
     assert "Traffic is heavy." in result.answer
     assert "Air quality is moderate." in result.answer
     assert "35 minutes" not in result.answer
+
+
+@pytest.mark.asyncio
+async def test_invalid_synthesis_output_retries_once_with_server_correction_then_succeeds():
+    import json
+
+    models = SimpleNamespace(generate_content=AsyncMock(side_effect=[
+        SimpleNamespace(text="not json"),
+        SimpleNamespace(text=GeminiSynthesisOutput(answer="Traffic is heavy.").model_dump_json()),
+    ]))
+    result, method = await FallbackResultSynthesizer(
+        GeminiResultSynthesizer("test-key", client=SimpleNamespace(models=models))
+    ).synthesize("traffic?", _summary())
+    assert method == "gemini_retry"
+    assert result.answer == "Traffic is heavy."
+    assert result.gemini_attempt_count == 2
+    assert result.gemini_first_attempt_status == "invalid_structured_output"
+    assert result.gemini_retry_reason == "invalid_structured_output"
+    retry_payload = json.loads(models.generate_content.await_args_list[1].kwargs["contents"])
+    assert retry_payload["server_retry_correction"]["validation_issue"] == "invalid_structured_output"
+    assert "untrusted data" in retry_payload["server_retry_correction"]["instruction"]
+
+
+@pytest.mark.asyncio
+async def test_two_invalid_synthesis_attempts_fall_back_deterministically():
+    models = SimpleNamespace(generate_content=AsyncMock(side_effect=[
+        SimpleNamespace(text="not json"), SimpleNamespace(text="still not json"),
+    ]))
+    result, method = await FallbackResultSynthesizer(
+        GeminiResultSynthesizer("test-key", client=SimpleNamespace(models=models))
+    ).synthesize("traffic?", _summary())
+    assert method == "deterministic_fallback"
+    assert result.gemini_attempt_count == 2
+    assert result.gemini_retry_triggered is True
+    assert result.gemini_final_status == "invalid_structured_output"
+    assert "Traffic is heavy." in result.answer
+
+
+@pytest.mark.asyncio
+async def test_unsupported_content_is_rejected_then_one_grounded_retry_is_accepted():
+    models = SimpleNamespace(generate_content=AsyncMock(side_effect=[
+        SimpleNamespace(text=GeminiSynthesisOutput(answer="Traffic is heavy in Atlantis.").model_dump_json()),
+        SimpleNamespace(text=GeminiSynthesisOutput(answer="Traffic is heavy.").model_dump_json()),
+    ]))
+    result, method = await FallbackResultSynthesizer(
+        GeminiResultSynthesizer("test-key", client=SimpleNamespace(models=models))
+    ).synthesize("traffic?", _summary())
+    assert method == "gemini_retry"
+    assert result.answer == "Traffic is heavy."
+    assert result.gemini_first_attempt_status == "unsupported_content"
+    assert result.gemini_retry_reason == "unsupported_named_entity"
+
+
+@pytest.mark.asyncio
+async def test_valid_first_synthesis_response_makes_exactly_one_call():
+    models = SimpleNamespace(generate_content=AsyncMock(return_value=SimpleNamespace(
+        text=GeminiSynthesisOutput(answer="Traffic is heavy.").model_dump_json()
+    )))
+    result, method = await FallbackResultSynthesizer(
+        GeminiResultSynthesizer("test-key", client=SimpleNamespace(models=models))
+    ).synthesize("traffic?", _summary())
+    assert method == "gemini"
+    assert result.gemini_attempt_count == 1
+    assert result.gemini_retry_triggered is False
+    assert models.generate_content.await_count == 1
+
+
+@pytest.mark.parametrize("include_public_services", [False, True])
+@pytest.mark.asyncio
+async def test_real_style_multi_agent_evidence_is_paraphrased_and_provenance_is_safe(include_public_services):
+    import json
+
+    request_id = uuid4()
+    mobility = AgentResponse(
+        request_id=request_id,
+        agent_name="mobility",
+        success=True,
+        answer=(
+            "### Traffic\nTraffic is moderate on Marine Drive. Average speed is 12 km/h. "
+            "The journey takes 20 mins. Event notice: Road construction is nearby."
+        ),
+        sources=[AgentSource(
+            name="mobility_data.json", source_type="structured_dataset",
+            url="https://private.example/mobility", metadata={"record_id": "mob_7"},
+        )],
+    )
+    environment = AgentResponse(
+        request_id=request_id,
+        agent_name="environment",
+        success=True,
+        answer="### Air Quality\nForecast for 2026-10-01: AQI is 74. PM2.5 is 12.",
+        sources=[AgentSource(
+            name="Open-Meteo", source_type="api", url="https://private.example/weather",
+            metadata={"provider": "private provider metadata"},
+        )],
+    )
+    results = [
+        SpecialistExecutionResult(agent_name=SpecialistAgentName.MOBILITY, success=True, response=mobility),
+        SpecialistExecutionResult(agent_name=SpecialistAgentName.ENVIRONMENT, success=True, response=environment),
+    ]
+    names = [SpecialistAgentName.MOBILITY, SpecialistAgentName.ENVIRONMENT]
+    answer = (
+        "Traffic conditions on Marine Drive are moderate. Speed is 12.0 km/h. "
+        "The journey takes 20 minutes. On 2026-10-01, the air quality index is 74 and PM 2.5 is 12."
+    )
+    if include_public_services:
+        public = AgentResponse(
+            request_id=request_id,
+            agent_name="public_services",
+            success=True,
+            answer="Hospital A is located in Colombo, a synthetic demo record.",
+            sources=[AgentSource(
+                name="public_services_data.json", source_type="synthetic_demo",
+                metadata={"record_id": "hosp_001"},
+            )],
+            metadata={"data_source": "synthetic_demo"},
+        )
+        results.append(SpecialistExecutionResult(
+            agent_name=SpecialistAgentName.PUBLIC_SERVICES, success=True, response=public
+        ))
+        names.append(SpecialistAgentName.PUBLIC_SERVICES)
+        answer += " Hospital A is in Colombo; this is a synthetic demo record."
+    summary = OrchestrationExecutionSummary(
+        requested_agents=names, successful_agents=names, status=ExecutionStatus.COMPLETE,
+        results=results,
+    )
+    models = SimpleNamespace(generate_content=AsyncMock(return_value=SimpleNamespace(
+        text=GeminiSynthesisOutput(answer=answer).model_dump_json()
+    )))
+    result = await GeminiResultSynthesizer(
+        "test-key", client=SimpleNamespace(models=models)
+    ).synthesize("Summarize the supplied information.", summary)
+    assert result.answer == answer
+    payload = json.loads(models.generate_content.await_args.kwargs["contents"])
+    evidence = payload["untrusted_specialist_evidence"]["successful_results"]
+    assert [item["agent_name"] for item in evidence] == [name.value for name in names]
+    assert evidence[0]["evidence_attributes"] == {"data_kind": "local_static_dataset"}
+    if include_public_services:
+        assert evidence[2]["evidence_attributes"] == {"data_kind": "synthetic_demo"}
+    serialized_payload = json.dumps(payload)
+    assert "private.example" not in serialized_payload
+    assert "private provider metadata" not in serialized_payload
+    assert str(request_id) not in serialized_payload
+    assert "record_id" not in serialized_payload
 
 
 @pytest.mark.asyncio
@@ -304,6 +458,44 @@ async def test_partial_success_keeps_status_answer_failure_and_sources() -> None
     assert "private exception" not in response.model_dump_json()
     assert len(response.sources) == 1
     assert fake_synthesis.calls[0][1].status is ExecutionStatus.PARTIAL_SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_gemini_sees_only_successful_evidence_and_python_appends_timeout_limitation():
+    import json
+
+    class TimedOutAgent(FakeAgent):
+        async def execute(self, request):
+            return AgentResponse(
+                request_id=request.request_id,
+                agent_name=self.name,
+                success=False,
+                error=AgentError(
+                    code=AgentErrorCode.TIMEOUT,
+                    message="The specialist exceeded its time limit.",
+                ),
+            )
+
+    registry = AgentRegistry()
+    mobility = FakeAgent("mobility", "Traffic is moderate.")
+    registry.register(mobility)
+    registry.register(TimedOutAgent("environment", "unused"))
+    models = SimpleNamespace(generate_content=AsyncMock(return_value=SimpleNamespace(
+        text=GeminiSynthesisOutput(answer="Traffic is moderate.").model_dump_json()
+    )))
+    response = await CityOrchestratorAgent(
+        registry, FakeRouter(["mobility", "environment"]),
+        synthesizer=GeminiResultSynthesizer("test-key", client=SimpleNamespace(models=models)),
+    ).execute(AgentRequest(query="traffic and environment"))
+    payload = json.loads(models.generate_content.await_args.kwargs["contents"])
+    assert payload["untrusted_specialist_evidence"]["successful_results"] == [
+        {"agent_name": "mobility", "answer": "Traffic is moderate."}
+    ]
+    assert "unavailable_agents" not in payload["untrusted_specialist_evidence"]
+    assert response.metadata["execution_status"] == "partial_success"
+    assert "environment could not be retrieved" in response.answer
+    assert "TIMEOUT" not in response.answer
+    assert len(response.sources) == 1
 
 
 @pytest.mark.asyncio

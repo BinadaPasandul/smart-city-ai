@@ -62,6 +62,6 @@ async def test_ambiguous_query_uses_match_count_then_documented_tie_priority() -
 
     result = await router.route("traffic, parking, hospital")
     assert [name.value for name in result.decision.agent_names] == ["mobility", "public_services"]
-    # Equal matches follow first-mention order; query order is traffic, rain, hospital.
+    # Equal distinct-keyword counts follow first-mention order.
     result = await router.route("traffic and rain and hospital")
     assert [name.value for name in result.decision.agent_names] == ["mobility", "environment", "public_services"]

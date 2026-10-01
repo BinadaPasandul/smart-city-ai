@@ -48,6 +48,7 @@ async def test_gemini_router_validates_supported_specialist_decisions(agent_name
     assert [name.value for name in result.decision.agent_names] == agent_names
     assert result.decision.confidence == 0.95
     assert result.routing_method == "gemini"
+    assert client.models.generate_content.await_count == 1
     call = client.models.generate_content.await_args.kwargs
     assert call["config"]["response_mime_type"] == "application/json"
     assert call["config"]["response_json_schema"] == RoutingDecision.model_json_schema()
@@ -143,15 +144,32 @@ async def test_gemini_rejects_malformed_or_invalid_decisions(output: str) -> Non
 
 
 @pytest.mark.asyncio
+async def test_gemini_routing_retries_invalid_structured_output_once_with_correction():
+    import json
+
+    client = MockGeminiClient()
+    client.models.generate_content.side_effect = [
+        SimpleNamespace(text="not json"),
+        SimpleNamespace(text=decision_json(["mobility"])),
+    ]
+    result = await GeminiQueryRouter("test-key", client=client).route("traffic")
+    assert [item.value for item in result.decision.agent_names] == ["mobility"]
+    assert client.models.generate_content.await_count == 2
+    retry_contents = json.loads(client.models.generate_content.await_args_list[1].kwargs["contents"])
+    assert retry_contents["server_retry_correction"]["validation_issue"] == "invalid_structured_output"
+    assert "required_schema" in retry_contents["server_retry_correction"]
+
+
+@pytest.mark.asyncio
 async def test_gemini_represents_clarification_without_agent() -> None:
-    router = GeminiQueryRouter(
-        "test-key", client=MockGeminiClient(decision_json([], clarification=True))
-    )
+    client = MockGeminiClient(decision_json([], clarification=True))
+    router = GeminiQueryRouter("test-key", client=client)
 
     result = await router.route("Is it okay there?")
 
     assert result.decision.agent_names == []
     assert result.decision.needs_clarification is True
+    assert client.models.generate_content.await_count == 1
 
 
 @pytest.mark.asyncio
