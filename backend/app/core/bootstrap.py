@@ -1,6 +1,7 @@
 """Minimal application-service bootstrap and specialist registration hook."""
 
 from app.agents.orchestrator.agent import CityOrchestratorAgent
+from app.agents.environment import EnvironmentAgent
 from app.agents.public_services.agent import PublicServicesAgent
 from app.agents.registry import AgentRegistry
 
@@ -8,12 +9,13 @@ from app.agents.registry import AgentRegistry
 def create_agent_registry() -> AgentRegistry:
     """Create the shared registry and register the available specialist agents.
 
-    Mobility and Environment agents are not implemented yet and are
-    intentionally left unregistered; the orchestrator already handles a
-    selected-but-unregistered specialist by returning AGENT_NOT_FOUND.
+    Mobility is not implemented yet and remains unregistered; the orchestrator
+    already handles a selected-but-unregistered specialist by returning
+    AGENT_NOT_FOUND.
     """
     registry = AgentRegistry()
     registry.register(PublicServicesAgent())
+    registry.register(EnvironmentAgent())
     return registry
 
 
