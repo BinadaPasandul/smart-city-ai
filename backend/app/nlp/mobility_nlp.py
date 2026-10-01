@@ -32,14 +32,23 @@ KNOWN_LOCATIONS = [
     "galle face", "wellawatte", "dehiwala", "mount lavinia", "panadura",
     "galle road", "kandy road", "maharagama", "nugegoda", "rajagiriya",
     "kaduwela", "battaramulla", "borella", "town hall", "kandy", "matara",
-    "kelaniya", "peliyagoda", "kottawa", "southern expressway"
+    "kelaniya", "peliyagoda", "kottawa", "southern expressway",
+    "marine drive", "baseline road", "high level road", "katunayake", "negombo",
+    "airport", "cinnamon gardens", "jaffna", "beliatta", "avissawella", "puttalam",
+    "wattala", "piliyandala", "kirulapone", "moratuwa", "sethsiripaya", "ratmalana"
 ]
+
 
 TRAFFIC_KEYWORDS = ["traffic", "congestion", "jam", "delay", "highway", "expressway", "speed", "road block", "accident", "corridor"]
 PARKING_KEYWORDS = ["park", "parking", "car park", "garage", "space", "vehicle spot", "capacity"]
 EV_KEYWORDS = ["ev", "electric vehicle", "charging", "charger", "plug", "ccs2", "type 2", "chargenet", "kwh"]
 TRANSIT_KEYWORDS = ["bus", "train", "transit", "route", "schedule", "timetable", "fare", "ticket", "station", "express line"]
-ROUTE_KEYWORDS = ["how do i get to", "route to", "travel to", "best way to", "directions to", "navigate to", "from", "to"]
+ROUTE_KEYWORDS = [
+    "how do i get to", "how to get to", "how do i travel to", "travel to",
+    "best way to", "directions to", "directions from", "how to reach",
+    "how to go to", "route from", "travel from"
+]
+SCHEDULE_KEYWORDS = ["schedule", "timetable", "frequency", "timing", "fare", "ticket", "what time", "when does"]
 
 
 class MobilityNLPAnalyzer:
@@ -51,23 +60,31 @@ class MobilityNLPAnalyzer:
         entities = self._extract_entities(query_lower)
         return intent, entities
 
+    def _matches_any(self, keywords: list[str], text: str) -> bool:
+        return any(re.search(r'\b' + re.escape(kw) + r'\b', text) for kw in keywords)
+
     def _classify_intent(self, query_lower: str) -> MobilityIntent:
-        # Check EV first for explicit EV terms
-        if any(kw in query_lower for kw in EV_KEYWORDS):
+        # Check EV first for explicit EV terms (with word boundary)
+        if self._matches_any(EV_KEYWORDS, query_lower):
             return MobilityIntent.EV_CHARGING
         # Check Parking
-        if any(kw in query_lower for kw in PARKING_KEYWORDS):
+        if self._matches_any(PARKING_KEYWORDS, query_lower):
             return MobilityIntent.PARKING_SEARCH
         # Check Traffic
-        if any(kw in query_lower for kw in TRAFFIC_KEYWORDS):
+        if self._matches_any(TRAFFIC_KEYWORDS, query_lower):
             return MobilityIntent.TRAFFIC_CHECK
+        # Check explicit transit schedules/timetables/fares
+        if self._matches_any(SCHEDULE_KEYWORDS, query_lower) and self._matches_any(TRANSIT_KEYWORDS, query_lower):
+            return MobilityIntent.PUBLIC_TRANSIT
         # Check Route planning vs Public transit
-        if any(kw in query_lower for kw in ROUTE_KEYWORDS) and ("from" in query_lower or "to" in query_lower):
+        if any(kw in query_lower for kw in ROUTE_KEYWORDS) or re.search(r'\bfrom\b.+\bto\b', query_lower):
             return MobilityIntent.ROUTE_PLANNING
-        if any(kw in query_lower for kw in TRANSIT_KEYWORDS):
+        if self._matches_any(TRANSIT_KEYWORDS, query_lower):
             return MobilityIntent.PUBLIC_TRANSIT
 
         return MobilityIntent.GENERAL_MOBILITY
+
+
 
     def _extract_entities(self, query_lower: str) -> MobilityEntities:
         extracted_locs = []

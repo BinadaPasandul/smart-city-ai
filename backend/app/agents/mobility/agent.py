@@ -190,11 +190,13 @@ class MobilityAgent(BaseAgent):
     def _handle_public_transit(
         self, query: str, entities: Any
     ) -> tuple[str, list[AgentSource], dict[str, Any]]:
-        buses = self.ir_service.search_buses(query)
-        trains = self.ir_service.search_trains(query=query, origin=entities.origin, destination=entities.destination)
+        mode = getattr(entities, "transit_mode", None)
+        buses = [] if mode == "train" else self.ir_service.search_buses(query)
+        trains = [] if mode == "bus" else self.ir_service.search_trains(query=query, origin=entities.origin, destination=entities.destination)
 
         sources = self.ir_service.build_agent_sources(buses, "bus_transit")
         sources.extend(self.ir_service.build_agent_sources(trains, "train_transit"))
+
 
         lines = ["### Public Transport Schedules & Route Options"]
 

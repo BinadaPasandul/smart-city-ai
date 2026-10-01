@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -57,8 +57,12 @@ class MobilityIRService:
         q_lower = query.lower()
         results = []
         for bus in buses:
-            stops_match = any(q_lower in stop.lower() for stop in bus.get("key_stops", []))
-            name_match = q_lower in bus.get("name", "").lower() or q_lower in bus.get("route_number", "")
+            stops_match = any(stop.lower() in q_lower or q_lower in stop.lower() for stop in bus.get("key_stops", []))
+            name_match = (
+                bus.get("name", "").lower() in q_lower
+                or q_lower in bus.get("name", "").lower()
+                or (bus.get("route_number") and bus.get("route_number") in q_lower)
+            )
             if name_match or stops_match:
                 results.append(bus)
         return results if results else buses
@@ -69,6 +73,7 @@ class MobilityIRService:
         if not origin and not destination and not query:
             return trains
 
+        q_lower = query.lower() if query else None
         results = []
         for train in trains:
             orig_match = not origin or (origin.lower() in train.get("origin", "").lower())
@@ -76,16 +81,19 @@ class MobilityIRService:
                 destination.lower() in train.get("destination", "").lower()
                 or any(destination.lower() in s.lower() for s in train.get("stops", []))
             )
-            query_match = not query or (
-                query.lower() in train.get("train_name", "").lower()
-                or query.lower() in train.get("line", "").lower()
-                or any(query.lower() in s.lower() for s in train.get("stops", []))
+            query_match = not q_lower or (
+                train.get("train_name", "").lower() in q_lower
+                or q_lower in train.get("train_name", "").lower()
+                or train.get("line", "").lower() in q_lower
+                or any(s.lower() in q_lower for s in train.get("stops", []))
+                or any(word in train.get("train_name", "").lower() for word in q_lower.split() if len(word) > 3)
             )
 
             if orig_match and dest_match and query_match:
                 results.append(train)
 
         return results if results else trains
+
 
     def search_parking(self, location: str | None = None) -> list[dict[str, Any]]:
         """Search parking facilities by location or name."""
@@ -140,9 +148,10 @@ class MobilityIRService:
                 try:
                     retrieved_at = datetime.fromisoformat(last_updated_str.replace("Z", "+00:00"))
                 except ValueError:
-                    retrieved_at = datetime.utcnow()
+                    retrieved_at = datetime.now(timezone.utc)
             else:
-                retrieved_at = datetime.utcnow()
+                retrieved_at = datetime.now(timezone.utc)
+
 
             sources.append(
                 AgentSource(
