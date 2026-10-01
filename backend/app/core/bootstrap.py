@@ -1,5 +1,6 @@
 """Minimal application-service bootstrap and specialist registration hook."""
 
+from app.agents.mobility.agent import MobilityAgent
 from app.agents.orchestrator.agent import CityOrchestratorAgent
 from app.agents.orchestrator.web_search import WebSearchService
 from app.agents.environment import EnvironmentAgent
@@ -10,13 +11,9 @@ from app.ir.web_search import TavilyWebSearchProvider
 
 
 def create_agent_registry() -> AgentRegistry:
-    """Create the shared registry and register the available specialist agents.
-
-    Mobility is not implemented yet and remains unregistered; the orchestrator
-    already handles a selected-but-unregistered specialist by returning
-    AGENT_NOT_FOUND.
-    """
+    """Create shared registry and register available specialist agents."""
     registry = AgentRegistry()
+    registry.register(MobilityAgent())
     registry.register(PublicServicesAgent())
     registry.register(EnvironmentAgent())
     return registry

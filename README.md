@@ -156,7 +156,7 @@ python -m spacy download en_core_web_sm
 
 Normal local NLP analysis does not require network access once the Python dependencies and spaCy model are installed. Gemini is still used as a fallback for uncertain semantic requests; local NLP is intended to reduce unnecessary LLM calls, not replace the LLM.
 
-### Current Scope and Future Work
+### Current Scope and Implemented Features
 
 Implemented phases:
 
@@ -165,14 +165,8 @@ Implemented phases:
 3. **Phase 2A — Deterministic routing:** keyword-based classification and registry-based specialist dispatch.
 4. **Phase 2B — Gemini routing:** structured Gemini classification, clarification support, and deterministic fallback.
 5. **Phase 3A — Multi-agent orchestration:** multiple specialist selection, concurrent execution, timeouts, and partial-failure reporting.
-6. **Phase 3B — Grounded synthesis:** combines successful specialist evidence and falls back deterministically.
-7. **Phase 4 — Chat API:** validates public requests, maps safe responses, and exposes the shared Orchestrator through FastAPI.
-8. **Phase 5 — Security foundation:** optional JWT verification, input/context limits, prompt/data separation, CORS restrictions, response headers, and per-process rate limiting.
-9. **Phase 6 — Controlled web-search fallback:** optional Tavily Basic Search after eligible specialist failures, validated snippets and sources, and grounded synthesis with deterministic fallback.
-10. **Phase 6.5 — User persistence and authentication:** async SQLAlchemy/PostgreSQL user storage, Alembic migrations, Argon2id password hashing, public registration/login, and login-issued access JWTs.
-11. **Phase 6.6 — Local NLP request understanding:** spaCy location extraction, dateparser time-expression extraction, shared keyword intent, heuristic confidence, and structured Gemini fallback before deterministic resilience.
 
-Not implemented yet: real specialist data retrieval, live traffic/weather/maps/public-service APIs, frontend, RAG/vector search, transformer NLP, refresh tokens, password reset, email verification, social login, roles/RBAC database, distributed rate limiting, and deployment. PostgreSQL is required for DB-backed registration/login; normal startup and offline tests do not require a database URL. In particular, successful orchestration with fake agents is an architecture verification, not evidence that the system currently returns verified city facts.
+Not implemented yet: real specialist data retrieval, live traffic/weather/maps/public-service APIs, final answer synthesis, chat API endpoint, frontend, database, RAG/vector search, NLP/NER, authentication/authorization, and deployment. In particular, successful orchestration with fake agents is an architecture verification, not evidence that the system currently returns verified city facts.
 
 ### Responsible AI
 
