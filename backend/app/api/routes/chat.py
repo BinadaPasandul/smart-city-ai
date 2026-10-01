@@ -2,11 +2,11 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.agents.contracts import AgentRequest
 from app.agents.orchestrator.agent import CityOrchestratorAgent
-from app.api.dependencies import get_orchestrator
+from app.api.dependencies import enforce_chat_rate_limit, get_orchestrator
 from app.api.schemas.chat import ChatRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -18,14 +18,24 @@ router = APIRouter(tags=["chat"])
     response_model=ChatResponse,
     summary="Submit a citizen request",
     description="Routes a validated message through the City Orchestrator and returns its structured result.",
-    responses={500: {"description": "Unexpected API processing error."}},
+    dependencies=[Depends(enforce_chat_rate_limit)],
+    responses={
+        401: {"description": "A valid Bearer token is required when authentication is enabled."},
+        429: {"description": "Chat rate limit exceeded; see Retry-After."},
+        500: {"description": "Unexpected API processing error."},
+    },
 )
 async def chat(
+    request: Request,
     body: ChatRequest,
     orchestrator: CityOrchestratorAgent = Depends(get_orchestrator),
 ) -> ChatResponse:
     """Adapt the public chat DTO to the internal request/response contract."""
-    agent_request = AgentRequest(query=body.message, context=body.context)
+    agent_request = AgentRequest(
+        request_id=request.state.request_id,
+        query=body.message,
+        context={"user_context": body.context},
+    )
     try:
         agent_response = await orchestrator.execute(agent_request)
     except Exception as exc:

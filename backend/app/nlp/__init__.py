@@ -1,1 +1,1 @@
-"""NLP package placeholder."""
+"""Local request understanding shared by the city orchestration layer."""

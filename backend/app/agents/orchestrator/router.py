@@ -15,6 +15,14 @@ class SpecialistAgentName(str, Enum):
     PUBLIC_SERVICES = "public_services"
 
 
+class MissingInformation(str, Enum):
+    """Request details whose absence can justify asking the user for context."""
+
+    INTENT = "intent"
+    LOCATION = "location"
+    TIME = "time"
+
+
 class RoutingDecision(BaseModel):
     """Validated routing plan; it contains no user-facing answer."""
 
@@ -24,6 +32,9 @@ class RoutingDecision(BaseModel):
     confidence: float = Field(strict=True, ge=0.0, le=1.0)
     reason: str = Field(min_length=1, max_length=240)
     needs_clarification: bool
+    locations: list[str] = Field(default_factory=list, max_length=10)
+    temporal_expressions: list[str] = Field(default_factory=list, max_length=10)
+    missing_information: list[MissingInformation] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def clarification_has_no_agent(self) -> "RoutingDecision":
@@ -38,7 +49,18 @@ class RoutingResult(BaseModel):
     """Decision plus the strategy that produced it."""
 
     decision: RoutingDecision
-    routing_method: Literal["gemini", "deterministic_fallback"]
+    routing_method: Literal[
+        "gemini", "local_nlp", "gemini_fallback", "deterministic_fallback"
+    ]
+    understanding_method: Literal[
+        "local_nlp", "gemini_fallback", "deterministic_fallback", "clarification"
+    ] | None = None
+    local_nlp_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    gemini_understanding_fallback_used: bool = False
+    locations: list[str] = Field(default_factory=list, max_length=10)
+    temporal_expressions: list[str] = Field(default_factory=list, max_length=10)
+    missing_information: list[MissingInformation] = Field(default_factory=list, max_length=3)
+    local_nlp_available: bool | None = None
 
 
 class QueryRouter(Protocol):
@@ -53,12 +75,14 @@ class DeterministicQueryRouter:
 
     KEYWORDS: dict[str, tuple[str, ...]] = {
         "mobility": (
-            "traffic", "public transport", "transport", "bus", "buses", "train", "trains",
-            "route", "routes", "parking", "park", "ev charging", "charging station",
+            "traffic", "public transport", "public transportation", "transport",
+            "bus", "buses", "train", "trains", "route", "routes", "parking", "park",
+            "ev charging", "charging station", "cycle", "cycling", "bike", "bicycle",
+            "commute", "transit",
         ),
         "environment": (
-            "weather", "rain", "air quality", "pollution", "waste", "environment",
-            "environmental", "air pollution",
+            "weather", "rain", "rainfall", "raining", "air quality", "pollution", "waste",
+            "environment", "environmental", "air pollution",
         ),
         # Grouped by Public Services subcategory purely for readability; the
         # router still treats this as one flat keyword set for the single
@@ -84,6 +108,10 @@ class DeterministicQueryRouter:
             "report issue", "report a problem", "streetlight", "street light",
             "broken streetlight", "broken street light", "pothole", "potholes",
             "garbage", "waste collection", "water supply", "water shortage", "road damage",
+            "hospital", "hospitals", "medical help", "medical care", "doctor", "clinic",
+            "ambulance", "police", "fire station", "fire stations",
+            "fire service", "emergency", "government service", "government services",
+            "citizen complaint", "citizen complaints", "city service complaint", "complaint",
         ),
     }
 
