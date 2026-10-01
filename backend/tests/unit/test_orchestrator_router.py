@@ -24,6 +24,25 @@ async def test_routes_supported_queries(query: str, expected: str) -> None:
     assert result.routing_method == "deterministic_fallback"
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Where is the nearest hospital?",
+        "Find a police station in Kandy",
+        "Where is the fire station?",
+        "What is the ambulance emergency number?",
+        "Where can I get a driving license?",
+        "I want to report a broken streetlight",
+        "There is a pothole on the road",
+        "How do I report a garbage collection problem?",
+    ],
+)
+@pytest.mark.asyncio
+async def test_public_services_keywords_cover_everyday_service_phrasing(query: str) -> None:
+    result = await DeterministicQueryRouter().route(query)
+    assert [name.value for name in result.decision.agent_names] == ["public_services"]
+
+
 @pytest.mark.asyncio
 async def test_routing_is_case_insensitive_and_normalizes_punctuation() -> None:
     result = await DeterministicQueryRouter().route("AIR-quality, please!")
