@@ -2,137 +2,125 @@
 
 ## Agentic Citizen Assistance System
 
-> **Status:** Initial project setup — implementation not started. Everything described below is **proposed or planned**; nothing has been implemented yet.
+> **Status:** Backend foundation, shared agent protocol, and orchestration through Phase 3A are implemented. Specialist agent integrations and final answer synthesis are still future work.
 
 ### Project Overview
 
-This is a university project for the **Information Retrieval and Web Analytics (IT 3041)** module.
+This university project for **Information Retrieval and Web Analytics (IT 3041)** explores a citizen assistance system for transportation, environmental conditions, and public services.
 
-The **proposed** system is an Agentic AI-based Smart City citizen assistance system. It aims to provide a unified conversational interface for accessing information across **transportation**, **environmental conditions**, and **public services**.
+The backend currently provides a FastAPI application and an in-process multi-agent orchestration foundation. At this stage, Gemini classifies and routes requests; test-only fake specialists demonstrate execution. The system does not yet provide live city information or a user-facing chat endpoint.
 
-### Problem Statement
+### Current Architecture
 
-Smart City information can be spread across multiple sources, such as separate websites, apps, and documents. This can make it difficult for citizens to efficiently find the information they need. This project sets out to address that problem by exploring a single assistant that can find and combine information from several domains.
-
-### Proposed Solution
-
-We propose a **multi-agent architecture** made up of four agents:
-
-- A **City Orchestrator Agent** receives the citizen's request, decides which specialist agent(s) are needed, and combines their results into one final response.
-- Three **specialist agents** (Mobility, Environment, Public Services) each focus on one domain and retrieve relevant information from their own data sources.
-
-The agents are planned to communicate over **HTTP/REST**.
-
-### Agents
-
-All responsibilities below are **planned**.
-
-#### City Orchestrator Agent
-- Receive user requests
-- Understand the request
-- Determine which specialist agent(s) are required
-- Coordinate the specialist agents
-- Combine their results
-- Produce the final response
-
-#### Mobility Agent
-- Traffic
-- Public transport
-- Routes
-- Parking
-- EV charging
-
-#### Environment Agent
-- Air quality
-- Pollution
-- Weather
-- Waste
-- Environmental conditions
-
-#### Public Services Agent
-- Hospitals
-- Police stations
-- Fire stations
-- Government services
-- Emergency information
-- Citizen complaints
-
-### Planned Technology Stack
-
-| Component | Planned Technology |
-|---|---|
-| LLM | Gemini 2.5 Flash |
-| LLM Framework | LangChain |
-| Backend | Python + FastAPI |
-| Frontend | React + TypeScript |
-| Agent Communication | HTTP/REST |
-| NLP | NER + Summarization |
-| Information Retrieval | BM25 + Semantic Retrieval / RAG |
-| Database | To be finalized |
-| Security | JWT + Input Validation + Authorization + HTTPS |
-
-These are **planned technologies** and may be refined during implementation.
-
-### Information Retrieval Strategy
-
-A hybrid data strategy is **planned**:
-
-- **Structured seed data** for initial development
-- **Documents** for retrieval / RAG
-- **APIs** for real-time information where appropriate
-
-None of this has been implemented yet.
-
-### Planned System Architecture
+The backend is **one FastAPI application**. The client communicates with FastAPI over HTTP/JSON. Internally, agents communicate through typed Python contracts and asynchronous in-process method calls. They are not separate services.
 
 ```mermaid
 flowchart TD
-    U[User] --> S[Security Layer]
-    S --> O[City Orchestrator Agent]
-    O <--> L[LLM / NLP]
-    O -- HTTP/REST --> M[Mobility Agent]
-    O -- HTTP/REST --> E[Environment Agent]
-    O -- HTTP/REST --> P[Public Services Agent]
-    M --> IR[Information Retrieval / Data Sources]
-    E --> IR
-    P --> IR
-    IR --> M
-    IR --> E
-    IR --> P
-    M -- HTTP/REST --> O
-    E -- HTTP/REST --> O
-    P -- HTTP/REST --> O
-    O --> R[Final Response]
-    R --> U
+    C[Client] -->|HTTP / JSON| API[FastAPI application]
+    API --> O[CityOrchestratorAgent]
+    O --> G[GeminiQueryRouter]
+    G -->|routing unavailable or invalid| D[DeterministicQueryRouter]
+    G -->|valid structured decision| R[AgentRegistry]
+    D --> R
+    R --> M[Mobility specialist]
+    R --> E[Environment specialist]
+    R --> P[Public Services specialist]
+    M -->|typed AgentResponse| O
+    E -->|typed AgentResponse| O
+    P -->|typed AgentResponse| O
+    O --> API
+    API --> C
 ```
+
+Gemini is used **only for routing**. It does not produce the final city answer. The Orchestrator validates the structured routing decision, resolves selected agents through the registry, and coordinates their execution. When Gemini is unavailable or returns invalid output, deterministic keyword routing remains available. Multi-agent selections execute concurrently in-process and report complete, partial, or failed execution status.
+
+### Agent Responsibilities
+
+The routing categories currently supported are:
+
+- **Mobility:** traffic, public transport, routes, parking, EV charging, and transport conditions.
+- **Environment:** weather, air quality, pollution, waste, and environmental conditions.
+- **Public Services:** hospitals, police, fire and emergency services, government services, and citizen complaints.
+
+The shared protocol includes `AgentRequest`, `AgentResponse`, `AgentSource`, stable error codes, an abstract `BaseAgent`, and `AgentRegistry`. Agent names are machine-readable: `mobility`, `environment`, `public_services`, and `orchestrator`.
+
+Concrete Mobility, Environment, and Public Services agents are not implemented yet. Fake agents are used in tests and verification to exercise orchestration without claiming real data retrieval.
+
+### Implemented Technology
+
+| Area | Current implementation |
+|---|---|
+| Backend | Python, FastAPI, Uvicorn |
+| Configuration | Pydantic Settings |
+| Agent contracts | Pydantic models and Python abstract base class |
+| Agent communication | Async in-process calls using typed Python objects |
+| Orchestration | City orchestrator with single- or multi-agent routing/execution |
+| Intelligent routing | Official Google Gen AI Python SDK (`google-genai`), structured routing output |
+| Gemini model | Configurable `GEMINI_MODEL`; default `gemini-3.5-flash-lite` |
+| Routing fallback | Deterministic keyword router |
+| Tests | pytest; normal test suite is offline and does not require a Gemini key |
+
+LangChain and LangGraph are not used. No internal HTTP, MCP, A2A, sockets, or message queues are used for agent communication.
+
+### Configuration
+
+Configuration is loaded by the shared application settings from environment variables and the backend `.env` file when present. The repository template is [`backend/.env.example`](backend/.env.example); copy it to `backend/.env` for local configuration and set credentials there. Keep `.env` private and never commit API keys.
+
+Relevant settings include:
+
+| Variable | Purpose |
+|---|---|
+| `GEMINI_API_KEY` | Google Gen AI API credential; not required for application startup or offline tests |
+| `GEMINI_MODEL` | Gemini routing model; defaults to `gemini-3.5-flash-lite` |
+| `AGENT_EXECUTION_TIMEOUT_SECONDS` | Per-agent execution timeout |
+| `APP_NAME`, `APP_ENV`, `API_V1_PREFIX`, `LOG_LEVEL` | Application metadata, API prefix, and logging |
+| `CORS_ORIGINS` | Configured browser origins |
+| `DATABASE_URL`, `JWT_SECRET`, `JWT_ALGORITHM` | Reserved configuration values; database and authentication behavior are not implemented |
+
+### Run the Backend
+
+From the `backend/` directory, install the listed dependencies in your virtual environment and start the development server:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --reload
+```
+
+The application health endpoint is `GET http://127.0.0.1:8000/api/v1/health`. There is not yet a public chat or agent endpoint.
+
+Run the automated tests from `backend/`:
+
+```powershell
+python -m pytest
+```
+
+The unit tests use mocks/fake agents and do not make Gemini API calls. To explicitly run the developer live verification, configure `GEMINI_API_KEY` and invoke:
+
+```powershell
+python -m scripts.verify_gemini_routing
+```
+
+This live verification sends requests to Gemini and exercises structured single-agent routing, multi-agent routing, fake-agent orchestration, and deterministic fallback. Its Gemini results must be distinguished from successful fallback results.
+
+### Current Scope and Future Work
+
+Implemented phases:
+
+1. **Phase 0 — Shared backend foundation:** FastAPI application, settings, logging, CORS, health endpoint, and pytest setup.
+2. **Phase 1 — Agent protocol:** typed request/response/source/error contracts, `BaseAgent`, and `AgentRegistry`.
+3. **Phase 2A — Deterministic routing:** keyword-based classification and registry-based specialist dispatch.
+4. **Phase 2B — Gemini routing:** structured Gemini classification, clarification support, and deterministic fallback.
+5. **Phase 3A — Multi-agent orchestration:** multiple specialist selection, concurrent execution, timeouts, and partial-failure reporting.
+
+Not implemented yet: real specialist data retrieval, live traffic/weather/maps/public-service APIs, final answer synthesis, chat API endpoint, frontend, database, RAG/vector search, NLP/NER, authentication/authorization, and deployment. In particular, successful orchestration with fake agents is an architecture verification, not evidence that the system currently returns verified city facts.
 
 ### Responsible AI
 
-The following areas are **planned** to be considered; none have been implemented yet.
-
-- **Fairness** – avoid biased or unequal answers across areas and user groups.
-- **Transparency** – make clear that users are talking to an AI and where information comes from.
-- **Explainability** – show which agents and sources contributed to an answer.
-- **Privacy** – minimise and protect any user data collected.
-- **Security** – protect against unauthorised access and malicious input.
-- **Hallucination / reliability** – ground answers in retrieved data and flag uncertainty.
-- **Potential misuse** – consider how the system could be abused and how to limit it.
-- **Smart-city-specific risks** – e.g. outdated emergency information, or over-reliance on the assistant in urgent situations.
+Responsible AI remains a project goal. Source attribution, privacy safeguards, fairness evaluation, and safe handling of urgent or stale public-service information need to be implemented and evaluated as real data sources and user-facing behavior are added. The current routing foundation should not be treated as having completed those safeguards.
 
 ### Commercialization
 
-The project will investigate potential:
-
-- Target users
-- Target organizations / customers
-- Pricing model
-- Deployment model
-
-No pricing has been decided.
-
-### Project Status
-
-**Initial project setup — implementation not started.**
+The project may investigate target users, organizations, pricing, and deployment options. No pricing or deployment model has been decided.
 
 ### Team
 
@@ -140,22 +128,3 @@ No pricing has been decided.
 - Member 2: [To be added]
 - Member 3: [To be added]
 - Member 4: [To be added]
-
-### Future Development Phases
-
-1. Project setup
-2. Backend foundation
-3. Data and seed datasets
-4. Individual agents
-5. Information Retrieval
-6. NLP
-7. LLM integration
-8. Orchestrator
-9. HTTP/REST agent communication
-10. Security
-11. Frontend
-12. Web analytics
-13. Responsible AI testing
-14. System evaluation
-15. Deployment
-16. Documentation and final submission

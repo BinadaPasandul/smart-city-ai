@@ -17,21 +17,51 @@ from app.agents.orchestrator.router import DeterministicQueryRouter
         ("How can I access government services?", "public_services"),
     ],
 )
-def test_routes_supported_queries(query: str, expected: str) -> None:
-    assert DeterministicQueryRouter().route(query) == expected
+@pytest.mark.asyncio
+async def test_routes_supported_queries(query: str, expected: str) -> None:
+    result = await DeterministicQueryRouter().route(query)
+    assert [name.value for name in result.decision.agent_names] == [expected]
+    assert result.routing_method == "deterministic_fallback"
 
 
-def test_routing_is_case_insensitive_and_normalizes_punctuation() -> None:
-    assert DeterministicQueryRouter().route("AIR-quality, please!") == "environment"
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Where is the nearest hospital?",
+        "Find a police station in Kandy",
+        "Where is the fire station?",
+        "What is the ambulance emergency number?",
+        "Where can I get a driving license?",
+        "I want to report a broken streetlight",
+        "There is a pothole on the road",
+        "How do I report a garbage collection problem?",
+    ],
+)
+@pytest.mark.asyncio
+async def test_public_services_keywords_cover_everyday_service_phrasing(query: str) -> None:
+    result = await DeterministicQueryRouter().route(query)
+    assert [name.value for name in result.decision.agent_names] == ["public_services"]
 
 
-def test_unsupported_query_has_no_route() -> None:
-    assert DeterministicQueryRouter().route("Write me a poem about space.") is None
+@pytest.mark.asyncio
+async def test_routing_is_case_insensitive_and_normalizes_punctuation() -> None:
+    result = await DeterministicQueryRouter().route("AIR-quality, please!")
+    assert [name.value for name in result.decision.agent_names] == ["environment"]
 
 
-def test_ambiguous_query_uses_match_count_then_documented_tie_priority() -> None:
+@pytest.mark.asyncio
+async def test_unsupported_query_has_no_route() -> None:
+    result = await DeterministicQueryRouter().route("Write me a poem about space.")
+    assert result.decision.agent_names == []
+    assert result.decision.needs_clarification is False
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_query_uses_match_count_then_documented_tie_priority() -> None:
     router = DeterministicQueryRouter()
 
-    assert router.route("traffic, parking, hospital") == "mobility"
-    # One match each: documented tie order is public_services > environment > mobility.
-    assert router.route("traffic and rain and hospital") == "public_services"
+    result = await router.route("traffic, parking, hospital")
+    assert [name.value for name in result.decision.agent_names] == ["mobility", "public_services"]
+    # Equal matches follow first-mention order; query order is traffic, rain, hospital.
+    result = await router.route("traffic and rain and hospital")
+    assert [name.value for name in result.decision.agent_names] == ["mobility", "environment", "public_services"]
