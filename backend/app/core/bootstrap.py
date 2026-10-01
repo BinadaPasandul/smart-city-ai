@@ -2,6 +2,7 @@
 
 from app.agents.mobility.agent import MobilityAgent
 from app.agents.orchestrator.agent import CityOrchestratorAgent
+from app.agents.public_services.agent import PublicServicesAgent
 from app.agents.registry import AgentRegistry
 
 
