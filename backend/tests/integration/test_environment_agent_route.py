@@ -90,7 +90,7 @@ def provider_responses() -> dict[str, MockResponse]:
 
 def test_chat_api_runs_registered_environment_agent(monkeypatch) -> None:
     mock_client = MockProviderClient(provider_responses(), timeout=0)
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", lambda *, timeout: mock_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: mock_client)
 
     with TestClient(app) as client:
         registered = client.app.state.agent_registry.get("environment")
@@ -132,7 +132,7 @@ def test_chat_api_returns_structured_geocoding_error(monkeypatch) -> None:
     mock_client = MockProviderClient(
         {GEOCODING_API_URL: httpx.ReadTimeout("private timeout detail")}, timeout=0
     )
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", lambda *, timeout: mock_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: mock_client)
 
     with TestClient(app) as client:
         response = client.post(

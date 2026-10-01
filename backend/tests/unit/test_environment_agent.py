@@ -64,8 +64,8 @@ class FakeClient:
         return selected
 
 
-def request(**context) -> AgentRequest:
-    return AgentRequest(query="Weather forecast", context=context)
+def request(*, query: str = "Weather and air quality forecast", **context) -> AgentRequest:
+    return AgentRequest(query=query, context=context)
 
 
 def make_air_quality_payload() -> dict:
@@ -96,7 +96,7 @@ def make_geocoding_payload(*, timezone_name: str | None = "Asia/Colombo", name: 
 async def test_retrieves_today_and_tomorrow_forecasts(monkeypatch) -> None:
     fake_client = FakeClient(FakeResponse(make_payload()), timeout=0)
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: fake_client,
     )
     agent = EnvironmentAgent()
@@ -126,7 +126,7 @@ async def test_successfully_resolves_city_and_uses_result_for_both_forecasts(mon
         AIR_QUALITY_API_URL: FakeResponse(make_air_quality_payload()),
     }
     fake_client = FakeClient(responses, timeout=0)
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", lambda *, timeout: fake_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: fake_client)
     result = await EnvironmentAgent().execute(request(location="Colombo"))
 
     assert result.success is True
@@ -153,7 +153,7 @@ async def test_city_resolution_without_timezone_still_returns_forecasts(monkeypa
         AIR_QUALITY_API_URL: FakeResponse(make_air_quality_payload()),
     }
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(responses, timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(location="Colombo"))
@@ -167,7 +167,7 @@ async def test_city_resolution_without_timezone_still_returns_forecasts(monkeypa
 @pytest.mark.asyncio
 async def test_city_with_no_geocoding_results_returns_not_found(monkeypatch) -> None:
     fake_client = FakeClient({GEOCODING_API_URL: FakeResponse({"results": []})}, timeout=0)
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", lambda *, timeout: fake_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: fake_client)
     result = await EnvironmentAgent().execute(request(location="Unknownville"))
 
     assert result.success is False
@@ -185,7 +185,7 @@ async def test_ambiguous_exact_city_matches_request_clarification(monkeypatch) -
         ]
     }
     fake_client = FakeClient({GEOCODING_API_URL: FakeResponse(ambiguous)}, timeout=0)
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", lambda *, timeout: fake_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: fake_client)
     result = await EnvironmentAgent().execute(request(location="Springfield"))
 
     assert result.success is False
@@ -206,7 +206,7 @@ async def test_ambiguous_exact_city_matches_request_clarification(monkeypatch) -
 )
 async def test_geocoding_timeout_or_http_error_is_structured(monkeypatch, response, expected_code) -> None:
     fake_client = FakeClient({GEOCODING_API_URL: response}, timeout=0)
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", lambda *, timeout: fake_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: fake_client)
     result = await EnvironmentAgent().execute(request(location="Colombo"))
 
     assert result.success is False
@@ -218,7 +218,7 @@ async def test_geocoding_timeout_or_http_error_is_structured(monkeypatch, respon
 @pytest.mark.asyncio
 async def test_invalid_geocoding_response_returns_structured_error(monkeypatch) -> None:
     fake_client = FakeClient({GEOCODING_API_URL: FakeResponse({"unexpected": []})}, timeout=0)
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", lambda *, timeout: fake_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: fake_client)
     result = await EnvironmentAgent().execute(request(location="Colombo"))
 
     assert result.success is False
@@ -234,7 +234,7 @@ async def test_successful_air_quality_retrieval_includes_values_units_and_scale_
         AIR_QUALITY_API_URL: FakeResponse(make_air_quality_payload()),
     }
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(responses, timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(latitude=6.9271, longitude=79.8612))
@@ -273,7 +273,7 @@ async def test_missing_air_quality_fields_are_reported_as_unavailable(monkeypatc
         AIR_QUALITY_API_URL: FakeResponse(payload),
     }
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(responses, timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(latitude=6.9, longitude=79.8))
@@ -292,7 +292,7 @@ async def test_air_quality_timeout_preserves_weather_results(monkeypatch) -> Non
         AIR_QUALITY_API_URL: httpx.ReadTimeout("private timeout details"),
     }
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(responses, timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(latitude=6.9, longitude=79.8))
@@ -313,7 +313,7 @@ async def test_air_quality_http_error_preserves_weather_results(monkeypatch) -> 
         AIR_QUALITY_API_URL: FakeResponse({}, status_code=429),
     }
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(responses, timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(latitude=6.9, longitude=79.8))
@@ -330,7 +330,7 @@ async def test_invalid_air_quality_response_preserves_weather_results(monkeypatc
         AIR_QUALITY_API_URL: FakeResponse({"unexpected": "shape"}),
     }
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(responses, timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(latitude=6.9, longitude=79.8))
@@ -347,7 +347,7 @@ async def test_invalid_air_quality_json_preserves_weather_results(monkeypatch) -
         AIR_QUALITY_API_URL: FakeResponse({}, invalid_json=True),
     }
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(responses, timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(latitude=6.9, longitude=79.8))
@@ -362,7 +362,7 @@ async def test_missing_coordinates_returns_invalid_request(monkeypatch) -> None:
     def unexpected_client(**kwargs):
         pytest.fail("Provider must not be called without coordinates")
 
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", unexpected_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", unexpected_client)
     result = await EnvironmentAgent().execute(AgentRequest(query="Weather"))
 
     assert result.success is False
@@ -374,7 +374,7 @@ async def test_invalid_coordinates_return_invalid_request(monkeypatch) -> None:
     def unexpected_client(**kwargs):
         pytest.fail("Provider must not be called with invalid coordinates")
 
-    monkeypatch.setattr("app.agents.environment.httpx.AsyncClient", unexpected_client)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", unexpected_client)
     result = await EnvironmentAgent().execute(request(latitude=91, longitude=79))
 
     assert result.success is False
@@ -384,7 +384,7 @@ async def test_invalid_coordinates_return_invalid_request(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_api_timeout_returns_timeout_error(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(httpx.ReadTimeout("timed out"), timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(latitude=6.9, longitude=79.8))
@@ -396,10 +396,45 @@ async def test_api_timeout_returns_timeout_error(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_invalid_provider_response_returns_execution_error(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.agents.environment.httpx.AsyncClient",
+        "app.ir.environment_ir.httpx.AsyncClient",
         lambda *, timeout: FakeClient(FakeResponse({"timezone": "UTC", "hourly": {}}), timeout=timeout),
     )
     result = await EnvironmentAgent().execute(request(latitude=6.9, longitude=79.8))
 
     assert result.success is False
     assert result.error.code == AgentErrorCode.AGENT_EXECUTION_FAILED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_urls", "weather_expected", "air_quality_expected"),
+    [
+        ("weather today", [FORECAST_API_URL], True, False),
+        ("air quality today", [AIR_QUALITY_API_URL], False, True),
+        ("weather and air quality", [FORECAST_API_URL, AIR_QUALITY_API_URL], True, True),
+        # Unknown environmental wording retains legacy retrieval of both feeds.
+        ("environmental conditions in Colombo", [FORECAST_API_URL, AIR_QUALITY_API_URL], True, True),
+    ],
+)
+async def test_query_intent_selects_environment_retrieval(
+    monkeypatch, query, expected_urls, weather_expected, air_quality_expected
+) -> None:
+    responses = {
+        FORECAST_API_URL: FakeResponse(make_payload()),
+        AIR_QUALITY_API_URL: FakeResponse(make_air_quality_payload()),
+    }
+    fake_client = FakeClient(responses, timeout=0)
+    monkeypatch.setattr(
+        "app.ir.environment_ir.httpx.AsyncClient",
+        lambda *, timeout: fake_client,
+    )
+
+    result = await EnvironmentAgent().execute(request(
+        latitude=6.9, longitude=79.8, query=query,
+    ))
+
+    assert result.success is True
+    assert [url for url, _ in fake_client.calls] == expected_urls
+    assert ("weather" in result.metadata) is weather_expected
+    assert ("air_quality" in result.metadata) is air_quality_expected
+    assert all(params["latitude"] == 6.9 and params["longitude"] == 79.8 for _, params in fake_client.calls)
