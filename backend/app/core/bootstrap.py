@@ -2,14 +2,24 @@
 
 from app.agents.orchestrator.agent import CityOrchestratorAgent
 from app.agents.orchestrator.web_search import WebSearchService
+from app.agents.environment import EnvironmentAgent
+from app.agents.public_services.agent import PublicServicesAgent
 from app.agents.registry import AgentRegistry
 from app.core.config import settings
 from app.ir.web_search import TavilyWebSearchProvider
 
 
 def create_agent_registry() -> AgentRegistry:
-    """Create the shared empty registry; integration can register real agents here."""
-    return AgentRegistry()
+    """Create the shared registry and register the available specialist agents.
+
+    Mobility is not implemented yet and remains unregistered; the orchestrator
+    already handles a selected-but-unregistered specialist by returning
+    AGENT_NOT_FOUND.
+    """
+    registry = AgentRegistry()
+    registry.register(PublicServicesAgent())
+    registry.register(EnvironmentAgent())
+    return registry
 
 
 def create_web_search_service() -> WebSearchService:

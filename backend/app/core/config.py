@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     web_search_query_max_length: int = Field(default=500, ge=1, le=5000)
     web_search_on_partial_failure: bool = True
 
+    nlp_enabled: bool = True
+    nlp_spacy_model: str = "en_core_web_sm"
+    nlp_local_confidence_threshold: float = Field(default=0.80, ge=0.0, le=1.0)
+    nlp_gemini_fallback_enabled: bool = True
+
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     @model_validator(mode="after")

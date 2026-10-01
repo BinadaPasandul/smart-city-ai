@@ -18,9 +18,11 @@ The backend is **one FastAPI application**. The client communicates with FastAPI
 flowchart TD
     C[Client] -->|HTTP / JSON| API[FastAPI application]
     API --> O[CityOrchestratorAgent]
-    O --> G[GeminiQueryRouter]
-    G -->|routing unavailable or invalid| D[DeterministicQueryRouter]
-    G -->|valid structured decision| R[AgentRegistry]
+    O --> N[Local NLP]
+    N -->|confident local decision| R[AgentRegistry]
+    N -->|uncertain| G[Gemini structured understanding]
+    G -->|valid structured decision| R
+    G -->|unavailable or invalid| D[DeterministicQueryRouter]
     D --> R
     R --> M[Mobility specialist]
     R --> E[Environment specialist]
@@ -36,7 +38,7 @@ flowchart TD
     API --> C
 ```
 
-Gemini routes requests and can synthesize the final answer from supplied evidence; it does not independently retrieve city facts. The Orchestrator validates routing decisions, executes registered specialists, and uses Tavily Basic Search only after eligible specialist failures when web search is enabled. Search results supplement synthesis as untrusted evidence. Deterministic routing and synthesis remain available when Gemini is unavailable.
+Local NLP analyzes each chat query first. Confident local intent and extraction skip Gemini routing; uncertain requests use Gemini's structured understanding fallback. Gemini can also synthesize final answers from supplied evidence, but does not independently retrieve city facts. The Orchestrator validates plans, executes registered specialists, and uses Tavily Basic Search only after eligible specialist failures when web search is enabled. Search results supplement synthesis as untrusted evidence. Deterministic routing and synthesis remain available when Gemini is unavailable.
 
 ### Agent Responsibilities
 
@@ -60,6 +62,7 @@ Concrete Mobility, Environment, and Public Services agents are not implemented y
 | Agent communication | Async in-process calls using typed Python objects |
 | Orchestration | City orchestrator with single- or multi-agent routing/execution |
 | Intelligent routing | Official Google Gen AI Python SDK (`google-genai`), structured routing output |
+| Local NLP | spaCy `en_core_web_sm` location entities, dateparser temporal phrases, shared deterministic domain keywords |
 | Gemini model | Configurable `GEMINI_MODEL`; default `gemini-3.5-flash-lite` |
 | Routing fallback | Deterministic keyword router |
 | Chat API | `POST /api/v1/chat`; `GET /api/v1/health` remains public |
@@ -95,6 +98,10 @@ Relevant settings include:
 | `WEB_SEARCH_PROVIDER`, `TAVILY_API_KEY` | Tavily is the current provider; a usable key is required only when search is enabled |
 | `WEB_SEARCH_TIMEOUT_SECONDS`, `WEB_SEARCH_MAX_RESULTS`, `WEB_SEARCH_QUERY_MAX_LENGTH` | Search time, result count, and query length limits; defaults to 8 seconds, 5 results, and 500 characters |
 | `WEB_SEARCH_ON_PARTIAL_FAILURE` | Allows search to supplement available specialist evidence after another specialist fails; defaults to `true` |
+| `NLP_ENABLED` | Enables local-first request analysis; defaults to `true` |
+| `NLP_SPACY_MODEL` | Installed local spaCy pipeline used for location NER; defaults to `en_core_web_sm` |
+| `NLP_LOCAL_CONFIDENCE_THRESHOLD` | Heuristic score required to skip Gemini; defaults to `0.80` |
+| `NLP_GEMINI_FALLBACK_ENABLED` | Allows structured Gemini request understanding when local NLP is uncertain; defaults to `true` |
 
 Account registration and login are available at `POST /api/v1/auth/register` and `POST /api/v1/auth/login`. They require a reachable PostgreSQL database configured through `DATABASE_URL`; the application can start without a database URL, but these endpoints return a safe service-unavailable response until it is configured. Registration stores only an Argon2id password hash. Emails are trimmed and lowercased before storage and lookup. Login issues an access-only JWT with a configurable lifetime; the token subject is the user's UUID.
 
@@ -137,6 +144,18 @@ python -m scripts.verify_gemini_routing
 
 This live verification sends requests to Gemini and exercises structured single-agent routing, multi-agent routing, fake-agent orchestration, and deterministic fallback. Its Gemini results must be distinguished from successful fallback results.
 
+### Local NLP Request Understanding
+
+Chat requests are analyzed locally before Gemini routing. The local layer preserves the original user message, normalizes a separate matching copy, uses the configured spaCy model for GPE/LOC/FAC entity extraction, uses dateparser to preserve textual time expressions, and shares the deterministic router's keyword categories for one- or multi-domain intent. A local heuristic score is compared with `NLP_LOCAL_CONFIDENCE_THRESHOLD`; it is an explainable routing score, not a calibrated probability. The score starts at `0.80` when supported intent keywords match, adds up to `0.08` for additional distinct matching terms, `0.06` for question/request phrasing, `0.08` when a location is extracted, `0.06` when a time expression is extracted, and up to `0.08` for additional matched specialist domains. It is clamped to `0..1`; with no supported intent it starts at `0`, or `0.30` when a location reference is present. An unresolved reference such as “there” subtracts `0.28`; an unavailable spaCy model subtracts `0.20`. Missing locations mentioned as absolute places are recorded as missing but do not by themselves suppress otherwise clear domain routing. Confident local requests avoid a Gemini routing call. Uncertain requests use structured Gemini understanding when enabled, then the existing deterministic router if Gemini is unavailable or invalid. Ambiguous references with missing location can result in a clarification request. Local NLP never geocodes places and may miss Sri Lankan locations.
+
+Install the small English spaCy pipeline separately after installing requirements. Application startup does not download models:
+
+```powershell
+python -m spacy download en_core_web_sm
+```
+
+Normal local NLP analysis does not require network access once the Python dependencies and spaCy model are installed. Gemini is still used as a fallback for uncertain semantic requests; local NLP is intended to reduce unnecessary LLM calls, not replace the LLM.
+
 ### Current Scope and Future Work
 
 Implemented phases:
@@ -151,8 +170,9 @@ Implemented phases:
 8. **Phase 5 — Security foundation:** optional JWT verification, input/context limits, prompt/data separation, CORS restrictions, response headers, and per-process rate limiting.
 9. **Phase 6 — Controlled web-search fallback:** optional Tavily Basic Search after eligible specialist failures, validated snippets and sources, and grounded synthesis with deterministic fallback.
 10. **Phase 6.5 — User persistence and authentication:** async SQLAlchemy/PostgreSQL user storage, Alembic migrations, Argon2id password hashing, public registration/login, and login-issued access JWTs.
+11. **Phase 6.6 — Local NLP request understanding:** spaCy location extraction, dateparser time-expression extraction, shared keyword intent, heuristic confidence, and structured Gemini fallback before deterministic resilience.
 
-Not implemented yet: real specialist data retrieval, live traffic/weather/maps/public-service APIs, frontend, RAG/vector search, NLP/NER, refresh tokens, password reset, email verification, social login, roles/RBAC database, distributed rate limiting, and deployment. PostgreSQL is required for DB-backed registration/login; normal startup and offline tests do not require a database URL. In particular, successful orchestration with fake agents is an architecture verification, not evidence that the system currently returns verified city facts.
+Not implemented yet: real specialist data retrieval, live traffic/weather/maps/public-service APIs, frontend, RAG/vector search, transformer NLP, refresh tokens, password reset, email verification, social login, roles/RBAC database, distributed rate limiting, and deployment. PostgreSQL is required for DB-backed registration/login; normal startup and offline tests do not require a database URL. In particular, successful orchestration with fake agents is an architecture verification, not evidence that the system currently returns verified city facts.
 
 ### Responsible AI
 

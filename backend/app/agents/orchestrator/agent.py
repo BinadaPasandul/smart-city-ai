@@ -11,9 +11,7 @@ from app.agents.orchestrator.execution import (
     OrchestrationExecutionSummary,
     SpecialistExecutionResult,
 )
-from app.agents.orchestrator.gemini_router import FallbackQueryRouter, GeminiQueryRouter
 from app.agents.orchestrator.router import (
-    DeterministicQueryRouter,
     QueryRouter,
     RoutingResult,
     SpecialistAgentName,
@@ -54,10 +52,12 @@ class CityOrchestratorAgent(BaseAgent):
                 settings.gemini_api_key, model=settings.gemini_model
             )
         )
-        self._router = router or FallbackQueryRouter(
-            GeminiQueryRouter(settings.gemini_api_key, model=settings.gemini_model),
-            DeterministicQueryRouter(),
-        )
+        if router is None:
+            from app.nlp.pipeline import RequestUnderstandingPipeline
+
+            self._router = RequestUnderstandingPipeline(settings=settings)
+        else:
+            self._router = router
         self._execution_timeout_seconds = (
             execution_timeout_seconds
             if execution_timeout_seconds is not None
@@ -73,7 +73,13 @@ class CityOrchestratorAgent(BaseAgent):
 
         routing = await self._router.route(request.query, request_id=str(request.request_id))
         decision = routing.decision
-        routing_metadata = {"routing_method": routing.routing_method}
+        understanding_method = routing.understanding_method or routing.routing_method
+        routing_metadata = {
+            "routing_method": routing.routing_method,
+            "understanding_method": understanding_method,
+            "nlp_confidence": routing.local_nlp_confidence,
+            "gemini_understanding_fallback_used": routing.gemini_understanding_fallback_used,
+        }
 
         if decision.needs_clarification:
             return self._failure(
@@ -97,8 +103,9 @@ class CityOrchestratorAgent(BaseAgent):
             routing.routing_method,
             [agent.value for agent in selected],
         )
+        specialist_request = self._enrich_request(request, routing)
         results = await asyncio.gather(
-            *(self._execute_specialist(name, request) for name in selected)
+            *(self._execute_specialist(name, specialist_request) for name in selected)
         )
         summary = self._summarize(selected, results)
         search_outcome = await self._web_search.run(
@@ -335,3 +342,26 @@ class CityOrchestratorAgent(BaseAgent):
             metadata=metadata or {},
             error=AgentError(code=code, message=message),
         )
+
+    @staticmethod
+    def _enrich_request(request: AgentRequest, routing: RoutingResult) -> AgentRequest:
+        """Copy the request and attach server-derived NLP facts before fan-out."""
+        if (
+            routing.understanding_method is None
+            and routing.local_nlp_confidence is None
+            and not routing.locations
+            and not routing.temporal_expressions
+        ):
+            return request.model_copy(deep=True)
+        context = {
+            key: value for key, value in request.context.items()
+            if key != "nlp"
+        }
+        context["nlp"] = {
+            "locations": list(routing.locations),
+            "temporal_expressions": list(routing.temporal_expressions),
+            "missing_information": [item.value for item in routing.missing_information],
+            "understanding_method": routing.understanding_method or routing.routing_method,
+            "confidence": routing.local_nlp_confidence,
+        }
+        return request.model_copy(update={"context": context}, deep=True)

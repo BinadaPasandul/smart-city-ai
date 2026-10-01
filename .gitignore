@@ -52,3 +52,6 @@ yarn-error.log*
 # --- OS files ---
 .DS_Store
 Thumbs.db
+
+#test
+postgres_tests/

@@ -60,9 +60,30 @@ class DeterministicQueryRouter:
             "weather", "rain", "air quality", "pollution", "waste", "environment",
             "environmental", "air pollution",
         ),
+        # Grouped by Public Services subcategory purely for readability; the
+        # router still treats this as one flat keyword set for the single
+        # "public_services" specialist. It never decides *which*
+        # subcategory applies -- that remains PublicServicesNLP's job.
         "public_services": (
-            "hospital", "hospitals", "police", "fire station", "fire stations", "emergency",
-            "government service", "government services", "citizen complaint", "city service complaint",
+            # Hospitals
+            "hospital", "hospitals", "medical center", "clinic", "emergency hospital",
+            # Police
+            "police", "police station", "police stations",
+            # Fire
+            "fire station", "fire stations", "fire service", "fire brigade",
+            # Emergency information
+            "emergency", "ambulance", "emergency number", "emergency contact",
+            "emergency service", "emergency hotline", "hotline",
+            # Government services
+            "government service", "government services", "government office",
+            "government department", "driving license",
+            # "driver's license" normalizes (via _normalize, below) to "driver s license".
+            "driver s license", "passport", "registration",
+            # Citizen complaints
+            "citizen complaint", "city service complaint", "complaint", "complaints",
+            "report issue", "report a problem", "streetlight", "street light",
+            "broken streetlight", "broken street light", "pothole", "potholes",
+            "garbage", "waste collection", "water supply", "water shortage", "road damage",
         ),
     }
 

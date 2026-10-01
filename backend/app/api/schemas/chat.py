@@ -110,6 +110,9 @@ class ChatMetadata(BaseModel):
     """Allowlisted orchestration metadata exposed to clients."""
 
     routing_method: str | None = None
+    understanding_method: str | None = None
+    nlp_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    gemini_understanding_fallback_used: bool = False
     selected_agents: list[str] = Field(default_factory=list)
     execution_status: str | None = None
     successful_agents: list[str] = Field(default_factory=list)
@@ -127,6 +130,9 @@ class ChatMetadata(BaseModel):
     def from_agent_metadata(cls, metadata: dict[str, Any]) -> "ChatMetadata":
         allowed = {
             "routing_method",
+            "understanding_method",
+            "nlp_confidence",
+            "gemini_understanding_fallback_used",
             "selected_agents",
             "execution_status",
             "successful_agents",
