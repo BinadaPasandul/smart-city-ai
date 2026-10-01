@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic
 pydantic-settings
+tzdata
 pytest
 pytest-asyncio
 httpx
