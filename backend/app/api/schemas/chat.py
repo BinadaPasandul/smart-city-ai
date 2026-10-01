@@ -117,6 +117,11 @@ class ChatMetadata(BaseModel):
     synthesis_method: str | None = None
     synthesis_used_agents: list[str] = Field(default_factory=list)
     synthesis_limitations: list[str] = Field(default_factory=list)
+    web_search_used: bool = False
+    web_search_status: str | None = None
+    web_search_provider: str | None = None
+    web_search_result_count: int = 0
+    answer_basis: str | None = None
 
     @classmethod
     def from_agent_metadata(cls, metadata: dict[str, Any]) -> "ChatMetadata":
@@ -129,6 +134,11 @@ class ChatMetadata(BaseModel):
             "synthesis_method",
             "synthesis_used_agents",
             "synthesis_limitations",
+            "web_search_used",
+            "web_search_status",
+            "web_search_provider",
+            "web_search_result_count",
+            "answer_basis",
         }
         return cls(**{key: value for key, value in metadata.items() if key in allowed})
 

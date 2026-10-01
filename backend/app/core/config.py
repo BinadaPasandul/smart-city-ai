@@ -16,15 +16,26 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
     database_url: str | None = None
+    test_database_url: str | None = None
     auth_enabled: bool = False
     jwt_secret: SecretStr | None = None
     jwt_algorithm: str = "HS256"
     jwt_issuer: str | None = None
     jwt_audience: str | None = None
+    jwt_access_token_expire_minutes: int = Field(default=60, ge=1, le=10080)
+    auth_rate_limit_requests: int = Field(default=10, ge=1)
+    auth_rate_limit_window_seconds: int = Field(default=60, ge=1)
     agent_execution_timeout_seconds: float = Field(default=10.0, gt=0)
     chat_max_message_length: int = Field(default=5000, ge=1, le=50000)
     chat_rate_limit_requests: int = Field(default=20, ge=1)
     chat_rate_limit_window_seconds: int = Field(default=60, ge=1)
+    web_search_enabled: bool = False
+    web_search_provider: str = "tavily"
+    tavily_api_key: SecretStr | None = None
+    web_search_timeout_seconds: float = Field(default=8.0, gt=0)
+    web_search_max_results: int = Field(default=5, ge=1, le=10)
+    web_search_query_max_length: int = Field(default=500, ge=1, le=5000)
+    web_search_on_partial_failure: bool = True
 
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
@@ -34,6 +45,12 @@ class Settings(BaseSettings):
             raise ValueError("JWT_ALGORITHM must be HS256")
         if "*" in self.cors_origins:
             raise ValueError("CORS_ORIGINS must list explicit origins; wildcard is not allowed")
+        if self.web_search_provider != "tavily":
+            raise ValueError("WEB_SEARCH_PROVIDER must be tavily")
+        if self.web_search_enabled and not (
+            self.tavily_api_key and self.tavily_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("TAVILY_API_KEY is required when WEB_SEARCH_ENABLED is true")
         if self.auth_enabled:
             secret = self.jwt_secret.get_secret_value() if self.jwt_secret else ""
             if len(secret) < 32:

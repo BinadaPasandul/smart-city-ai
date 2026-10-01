@@ -2,9 +2,10 @@
 
 import asyncio
 import logging
+from urllib.parse import urlsplit, urlunsplit
 
 from app.agents.base import BaseAgent
-from app.agents.contracts import AgentError, AgentErrorCode, AgentRequest, AgentResponse
+from app.agents.contracts import AgentError, AgentErrorCode, AgentRequest, AgentResponse, AgentSource
 from app.agents.orchestrator.execution import (
     ExecutionStatus,
     OrchestrationExecutionSummary,
@@ -22,6 +23,7 @@ from app.agents.orchestrator.synthesizer import (
     GeminiResultSynthesizer,
     ResultSynthesizer,
 )
+from app.agents.orchestrator.web_search import WebSearchService, WebSearchStatus
 from app.agents.registry import AgentNotFoundError, AgentRegistry
 from app.core.config import settings
 
@@ -38,6 +40,7 @@ class CityOrchestratorAgent(BaseAgent):
         *,
         execution_timeout_seconds: float | None = None,
         synthesizer: ResultSynthesizer | None = None,
+        web_search: WebSearchService | None = None,
     ) -> None:
         super().__init__(
             "orchestrator",
@@ -45,6 +48,7 @@ class CityOrchestratorAgent(BaseAgent):
             capabilities=("gemini_routing", "deterministic_fallback", "parallel_execution"),
         )
         self._registry = registry
+        self._web_search = web_search or WebSearchService(None, enabled=False)
         self._synthesizer = FallbackResultSynthesizer(
             synthesizer or GeminiResultSynthesizer(
                 settings.gemini_api_key, model=settings.gemini_model
@@ -97,6 +101,10 @@ class CityOrchestratorAgent(BaseAgent):
             *(self._execute_specialist(name, request) for name in selected)
         )
         summary = self._summarize(selected, results)
+        search_outcome = await self._web_search.run(
+            request.query, summary, request_id=str(request.request_id)
+        )
+        web_evidence = search_outcome.evidence
         metadata = {
             **routing_metadata,
             "selected_agents": [agent.value for agent in selected],
@@ -104,6 +112,16 @@ class CityOrchestratorAgent(BaseAgent):
             "successful_agents": [agent.value for agent in summary.successful_agents],
             "failed_agents": [agent.value for agent in summary.failed_agents],
             "execution_summary": summary.model_dump(mode="json"),
+            "web_search_used": search_outcome.status is WebSearchStatus.SUCCESS,
+            "web_search_status": search_outcome.status.value,
+            "web_search_provider": search_outcome.provider,
+            "web_search_result_count": len(web_evidence),
+            "answer_basis": (
+                "specialist_plus_web" if web_evidence and summary.successful_agents
+                else "web_fallback" if web_evidence
+                else "specialist" if summary.successful_agents
+                else None
+            ),
         }
         logger.info(
             "Finished orchestration request_id=%s status=%s succeeded=%d failed=%d",
@@ -141,17 +159,25 @@ class CityOrchestratorAgent(BaseAgent):
                 message="No selected specialist completed the request.",
             )
 
-        merged_sources = [
+        specialist_sources = [
             source
             for result in results
             if result.success and result.response is not None
             for source in result.response.sources
         ]
+        merged_sources = self._merge_sources(
+            specialist_sources, [item.to_agent_source() for item in web_evidence]
+        )
         answer = "No specialist agent completed the request."
-        if summary.status is not ExecutionStatus.FAILED:
-            synthesis_result, synthesis_method = await self._synthesizer.synthesize(
-                request.query, summary
-            )
+        if summary.status is not ExecutionStatus.FAILED or web_evidence:
+            if web_evidence:
+                synthesis_result, synthesis_method = await self._synthesizer.synthesize(
+                    request.query, summary, web_evidence
+                )
+            else:
+                synthesis_result, synthesis_method = await self._synthesizer.synthesize(
+                    request.query, summary
+                )
             answer = synthesis_result.answer
             if summary.status is ExecutionStatus.PARTIAL_SUCCESS:
                 unavailable = [name.value.replace("_", " ") for name in summary.failed_agents]
@@ -172,11 +198,11 @@ class CityOrchestratorAgent(BaseAgent):
         return AgentResponse(
             request_id=request.request_id,
             agent_name=self.name,
-            success=summary.status is not ExecutionStatus.FAILED,
+            success=summary.status is not ExecutionStatus.FAILED or bool(web_evidence),
             answer=answer,
             sources=merged_sources,
             metadata=metadata,
-            error=overall_error,
+            error=None if web_evidence else overall_error,
         )
 
     async def _execute_specialist(
@@ -230,7 +256,7 @@ class CityOrchestratorAgent(BaseAgent):
                 ),
             )
 
-        if not response.success:
+        if not response.success or not response.answer.strip():
             return SpecialistExecutionResult(
                 agent_name=agent_name,
                 success=False,
@@ -242,6 +268,36 @@ class CityOrchestratorAgent(BaseAgent):
                 ),
             )
         return SpecialistExecutionResult(agent_name=agent_name, success=True, response=response)
+
+    @staticmethod
+    def _merge_sources(
+        specialist_sources: list[AgentSource], web_sources: list[AgentSource]
+    ) -> list[AgentSource]:
+        """Keep every specialist source and omit duplicate supplemental URLs."""
+        merged = list(specialist_sources)
+        seen: set[str] = set()
+
+        def url_key(source: AgentSource) -> str | None:
+            if not source.url:
+                return None
+            try:
+                parsed = urlsplit(source.url)
+                return urlunsplit((
+                    parsed.scheme.lower(), parsed.netloc.lower(),
+                    parsed.path or "/", parsed.query, "",
+                ))
+            except ValueError:
+                return source.url
+
+        seen.update(key for source in specialist_sources if (key := url_key(source)))
+        for source in web_sources:
+            key = url_key(source)
+            if key in seen:
+                continue
+            if key:
+                seen.add(key)
+            merged.append(source)
+        return merged
 
     @staticmethod
     def _summarize(
