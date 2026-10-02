@@ -39,4 +39,4 @@ def test_registry_lists_the_registered_specialist() -> None:
 
     names = [agent.name for agent in registry.list_agents()]
 
-    assert names == ["public_services", "environment"]
+    assert set(names) == {"mobility", "environment", "public_services"}

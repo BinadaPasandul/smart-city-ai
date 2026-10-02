@@ -113,6 +113,11 @@ class ChatMetadata(BaseModel):
     understanding_method: str | None = None
     nlp_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     gemini_understanding_fallback_used: bool = False
+    gemini_attempt_count: int = 0
+    gemini_first_attempt_status: str | None = None
+    gemini_retry_triggered: bool = False
+    gemini_retry_reason: str | None = None
+    gemini_final_status: str | None = None
     selected_agents: list[str] = Field(default_factory=list)
     execution_status: str | None = None
     successful_agents: list[str] = Field(default_factory=list)
@@ -120,6 +125,11 @@ class ChatMetadata(BaseModel):
     synthesis_method: str | None = None
     synthesis_used_agents: list[str] = Field(default_factory=list)
     synthesis_limitations: list[str] = Field(default_factory=list)
+    gemini_synthesis_attempt_count: int = 0
+    gemini_synthesis_first_attempt_status: str | None = None
+    gemini_synthesis_retry_triggered: bool = False
+    gemini_synthesis_retry_reason: str | None = None
+    gemini_synthesis_final_status: str | None = None
     web_search_used: bool = False
     web_search_status: str | None = None
     web_search_provider: str | None = None
@@ -133,6 +143,11 @@ class ChatMetadata(BaseModel):
             "understanding_method",
             "nlp_confidence",
             "gemini_understanding_fallback_used",
+            "gemini_attempt_count",
+            "gemini_first_attempt_status",
+            "gemini_retry_triggered",
+            "gemini_retry_reason",
+            "gemini_final_status",
             "selected_agents",
             "execution_status",
             "successful_agents",
@@ -140,6 +155,11 @@ class ChatMetadata(BaseModel):
             "synthesis_method",
             "synthesis_used_agents",
             "synthesis_limitations",
+            "gemini_synthesis_attempt_count",
+            "gemini_synthesis_first_attempt_status",
+            "gemini_synthesis_retry_triggered",
+            "gemini_synthesis_retry_reason",
+            "gemini_synthesis_final_status",
             "web_search_used",
             "web_search_status",
             "web_search_provider",

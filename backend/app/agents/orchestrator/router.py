@@ -61,6 +61,11 @@ class RoutingResult(BaseModel):
     temporal_expressions: list[str] = Field(default_factory=list, max_length=10)
     missing_information: list[MissingInformation] = Field(default_factory=list, max_length=3)
     local_nlp_available: bool | None = None
+    gemini_attempt_count: int = 0
+    gemini_first_attempt_status: str | None = None
+    gemini_retry_triggered: bool = False
+    gemini_retry_reason: str | None = None
+    gemini_final_status: str | None = None
 
 
 class QueryRouter(Protocol):
@@ -136,7 +141,12 @@ class DeterministicQueryRouter:
             return RoutingResult(decision=decision, routing_method="deterministic_fallback")
 
         match_counts = {
-            category: sum(f" {keyword} " in f" {normalized} " for keyword in keywords)
+            # Several specialist phrases overlap across subcategories. Count a
+            # phrase once so duplicate catalog entries cannot distort tie order.
+            category: sum(
+                f" {keyword} " in f" {normalized} "
+                for keyword in dict.fromkeys(keywords)
+            )
             for category, keywords in self.KEYWORDS.items()
         }
         selected = [category for category, count in match_counts.items() if count > 0]
