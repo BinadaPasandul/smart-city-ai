@@ -1,10 +1,13 @@
+import { useChat } from "@/hooks/useChat";
 import { AppLayout } from "@/layouts/AppLayout";
 import { HomePage } from "@/pages/HomePage";
 
 function App() {
+  const chat = useChat();
+
   return (
-    <AppLayout>
-      <HomePage />
+    <AppLayout hideFooter={chat.hasStarted}>
+      <HomePage chat={chat} />
     </AppLayout>
   );
 }

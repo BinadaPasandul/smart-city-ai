@@ -1,11 +1,17 @@
-import { Button } from "@/components/ui/Button";
+import { ChatInput } from "@/components/chat/ChatInput";
+
+interface HeroProps {
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSubmit: () => void;
+}
 
 /**
- * Primary introduction + the future chat entry point. The input/button are
- * intentionally inert (disabled, no state, no submit handler) — wiring them
- * to POST /api/v1/chat is a later phase.
+ * Primary introduction + the live chat entry point. Typing here (via the
+ * shared ChatInput) hands off to the dedicated chat layout — see
+ * useChat()'s `hasStarted` and HomePage's conditional render.
  */
-export function Hero() {
+export function Hero({ draft, onDraftChange, onSubmit }: HeroProps) {
   return (
     <section className="mx-auto max-w-3xl text-center">
       <span className="inline-flex items-center gap-1.5 rounded-full border border-civic-200 bg-civic-50 px-3 py-1 text-xs font-medium text-civic-700">
@@ -23,27 +29,14 @@ export function Hero() {
         don&apos;t have to search a dozen different places for an answer.
       </p>
 
-      <form
-        className="mx-auto mt-10 flex max-w-xl flex-col gap-3 sm:flex-row"
-        onSubmit={(event) => event.preventDefault()}
-      >
-        <label htmlFor="city-question" className="sr-only">
-          Ask anything about your city
-        </label>
-        <input
-          id="city-question"
-          type="text"
-          disabled
-          placeholder="Ask anything about your city…"
-          className="w-full flex-1 rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-400 placeholder:text-ink-400"
-        />
-        <Button type="submit" disabled className="sm:w-auto">
-          Ask
-        </Button>
-      </form>
+      <ChatInput
+        value={draft}
+        onChange={onDraftChange}
+        onSubmit={onSubmit}
+        className="mx-auto mt-10 max-w-xl"
+      />
       <p className="mt-3 text-xs text-ink-400">
-        The assistant isn&apos;t connected yet — this is a preview of the
-        interface.
+        Preview only — CIVA isn&apos;t connected to live city data yet.
       </p>
     </section>
   );

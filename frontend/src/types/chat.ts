@@ -72,3 +72,21 @@ export interface ChatResponse {
   metadata: ChatMetadata;
   error: ChatError | null;
 }
+
+/* -------------------------------------------------------------------------
+ * Local UI state types (Phase 3A)
+ *
+ * These are NOT the backend contract above — they exist purely in React
+ * state for the local-only chat preview. A `ChatMessage` is not a
+ * `ChatResponse`; there's no `sources`/`metadata`/`error` here because
+ * nothing has actually been retrieved from the backend yet.
+ * ---------------------------------------------------------------------- */
+
+export type MessageRole = "user" | "assistant";
+
+export interface ChatMessage {
+  id: string;
+  role: MessageRole;
+  content: string;
+  timestamp: Date;
+}

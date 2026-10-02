@@ -79,12 +79,18 @@ const QUICK_ACTIONS: QuickAction[] = [
   },
 ];
 
+interface QuickActionsProps {
+  /** Places the clicked action's text into the chat draft — never submits it. */
+  onSelectAction: (text: string) => void;
+}
+
 /**
- * Non-functional shortcut chips previewing common requests. No click
- * handlers are attached — they exist to communicate the kinds of questions
- * the assistant will answer, not to perform any action yet.
+ * Shortcut chips previewing common requests. Clicking one places its label
+ * into the chat draft (via the same `setDraft` callback `ChatWelcome`'s
+ * suggestions use) so the user can review or edit it before sending —
+ * nothing here submits a message or calls the backend on its own.
  */
-export function QuickActions() {
+export function QuickActions({ onSelectAction }: QuickActionsProps) {
   return (
     <section aria-labelledby="quick-actions-heading">
       <h2 id="quick-actions-heading" className="sr-only">
@@ -95,6 +101,7 @@ export function QuickActions() {
           <button
             key={action.label}
             type="button"
+            onClick={() => onSelectAction(action.label)}
             className="flex flex-col items-center gap-2.5 rounded-xl border border-ink-200/80 bg-white px-3 py-5 text-center transition-colors duration-150 hover:border-civic-300 hover:bg-civic-50"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-ink-50 text-ink-600">
