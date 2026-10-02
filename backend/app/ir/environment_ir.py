@@ -9,10 +9,21 @@ import httpx
 from pydantic import BaseModel, Field
 
 from app.agents.contracts import AgentErrorCode, AgentSource
+from app.nlp.sri_lanka_locations import KNOWN_LOCATIONS, is_known_country
 
 FORECAST_API_URL = "https://api.open-meteo.com/v1/forecast"
 AIR_QUALITY_API_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 GEOCODING_API_URL = "https://geocoding-api.open-meteo.com/v1/search"
+
+# This project is scoped to Sri Lanka (see sri_lanka_locations.py), but
+# Open-Meteo's geocoding is global: a bare "Kandy" or "Colombo" matches
+# several same-named places worldwide and fails with an ambiguous-city
+# error. A bare gazetteer city name is biased toward Sri Lanka before the
+# request is made (see `_augment_with_known_country`), and candidate
+# selection is biased toward Sri Lanka as a safety net for names outside
+# the gazetteer (see `_resolve_location`).
+_KNOWN_LOCATIONS_CASEFOLDED = frozenset(name.casefold() for name in KNOWN_LOCATIONS)
+_AIR_QUALITY_WINDOW_HOURS = 6
 
 
 class EnvironmentProviderError(BaseModel):
@@ -241,7 +252,7 @@ async def _resolve_location(
 ) -> tuple[tuple[float, float] | None, ResolvedLocation | None, EnvironmentProviderError | None]:
     payload, error = await _request_json(
         client, GEOCODING_API_URL,
-        {"name": query, "count": 10, "language": "en", "format": "json"},
+        {"name": _augment_with_known_country(query), "count": 10, "language": "en", "format": "json"},
         "Location search",
     )
     if error:
@@ -273,15 +284,42 @@ async def _resolve_location(
     if len(exact) == 1:
         selected = exact[0]
     elif len(exact) > 1 or len(candidates) > 1:
-        choices = [", ".join(part for part in (item.name, item.country) if part) for item in candidates]
-        return None, None, _error(
-            AgentErrorCode.INVALID_REQUEST,
-            "The city name is ambiguous. Specify a country or provide latitude and longitude. "
-            f"Matches: {'; '.join(choices)}",
-        )
+        # Still ambiguous after the query-side bias above (e.g. a name
+        # outside the gazetteer, or Open-Meteo returning more than one
+        # Sri Lanka-tagged result alongside others). If exactly one
+        # candidate in the relevant pool is tagged Sri Lanka, prefer it
+        # rather than asking the user to disambiguate a Sri-Lanka-scoped
+        # assistant's own country.
+        pool = exact or candidates
+        sri_lankan = [item for item in pool if is_known_country(item.country or "")]
+        if len(sri_lankan) == 1:
+            selected = sri_lankan[0]
+        else:
+            choices = [", ".join(part for part in (item.name, item.country) if part) for item in candidates]
+            return None, None, _error(
+                AgentErrorCode.INVALID_REQUEST,
+                "The city name is ambiguous. Specify a country or provide latitude and longitude. "
+                f"Matches: {'; '.join(choices)}",
+            )
     else:
         selected = candidates[0]
     return (selected.latitude, selected.longitude), selected, None
+
+
+def _augment_with_known_country(query: str) -> str:
+    """Append ", Sri Lanka" to a bare gazetteer city name before searching.
+
+    Only applies when the query is *exactly* a known Sri Lankan city with no
+    qualifier already present (a query containing a comma is left alone --
+    the caller, e.g. the NLP pipeline's own "<location>, <country>"
+    composition, already said which place they mean).
+    """
+    stripped = query.strip()
+    if "," in stripped:
+        return query
+    if stripped.casefold() in _KNOWN_LOCATIONS_CASEFOLDED:
+        return f"{stripped}, Sri Lanka"
+    return query
 
 
 async def _request_json(
@@ -322,8 +360,15 @@ def _build_weather_data(payload: Any) -> tuple[WeatherData | None, EnvironmentPr
                 candidates = upcoming
         if candidates:
             i = candidates[0]
+            # `times[i]` is the provider's full ISO datetime (e.g.
+            # "2026-10-02T17:00"); `date` above already carries the date
+            # half, so only the time-of-day is kept here to avoid the date
+            # appearing twice when this is formatted for display.
+            forecast_dt = _forecast_datetime(times[i])
             forecasts.append(WeatherForecast(
-                date=target_date.isoformat(), time=times[i], temperature_c=temperatures[i],
+                date=target_date.isoformat(),
+                time=forecast_dt.strftime("%H:%M") if forecast_dt is not None else times[i],
+                temperature_c=temperatures[i],
                 precipitation_probability_percent=probabilities[i], weather_code=codes[i],
             ))
     if not forecasts:
@@ -338,7 +383,7 @@ def _build_air_quality_data(payload: Any) -> tuple[AirQualityData | None, Enviro
     if not isinstance(timezone_name, str) or not timezone_name or not isinstance(hourly, dict):
         return None, _invalid_air_quality_response()
     try:
-        ZoneInfo(timezone_name)
+        tzinfo = ZoneInfo(timezone_name)
     except (ZoneInfoNotFoundError, ValueError):
         return None, _error(AgentErrorCode.AGENT_EXECUTION_FAILED, "Air quality provider returned an invalid timezone.")
     times = hourly.get("time")
@@ -357,10 +402,23 @@ def _build_air_quality_data(payload: Any) -> tuple[AirQualityData | None, Enviro
                 return None, _invalid_air_quality_response()
     if not any(v is not None for values in arrays.values() for v in values):
         return None, _error(AgentErrorCode.AGENT_EXECUTION_FAILED, "Air quality forecast data is unavailable for this location.")
+
+    # The provider returns a full multi-day hourly series; keep only a
+    # small window (current hour onward) so the answer stays readable
+    # instead of dumping every hour of both forecast days. Mirrors
+    # weather's current-forecast framing above.
+    current_local = datetime.now(tzinfo).replace(tzinfo=None)
+    upcoming = [i for i, value in enumerate(times) if _forecast_datetime(value) >= current_local]
+    window_indices = (
+        upcoming[:_AIR_QUALITY_WINDOW_HOURS]
+        if upcoming
+        else list(range(min(_AIR_QUALITY_WINDOW_HOURS, len(times))))
+    )
+
     forecasts = [AirQualityForecast(
-        time=timestamp, pm2_5_ug_m3=arrays["pm2_5"][i], us_aqi=arrays["us_aqi"][i],
+        time=times[i], pm2_5_ug_m3=arrays["pm2_5"][i], us_aqi=arrays["us_aqi"][i],
         european_aqi=arrays["european_aqi"][i],
-    ) for i, timestamp in enumerate(times)]
+    ) for i in window_indices]
     return AirQualityData(timezone=timezone_name, forecasts=forecasts), None
 
 

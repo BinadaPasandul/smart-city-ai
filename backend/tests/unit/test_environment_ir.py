@@ -160,6 +160,146 @@ async def test_ambiguous_city_returns_clarification_error_without_forecast_calls
 
 
 @pytest.mark.asyncio
+async def test_bare_known_sri_lankan_city_sends_country_augmented_geocoding_query(monkeypatch):
+    """A bare gazetteer city name (no comma/country already present) is
+    biased toward Sri Lanka in the geocoding request itself."""
+    client = FakeClient({
+        GEOCODING_API_URL: FakeResponse({"results": [{
+            "name": "Kandy", "country": "Sri Lanka", "timezone": "Asia/Colombo",
+            "latitude": 7.2906, "longitude": 80.6336,
+        }]}),
+        FORECAST_API_URL: FakeResponse(weather_payload()),
+        AIR_QUALITY_API_URL: FakeResponse(air_payload()),
+    }, timeout=10)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: client)
+
+    result = await EnvironmentIR().retrieve({"location": "Kandy"})
+
+    assert result.errors == []
+    assert result.resolved_location is not None and result.resolved_location.country == "Sri Lanka"
+    geocoding_params = next(params for url, params in client.calls if url == GEOCODING_API_URL)
+    assert geocoding_params["name"] == "Kandy, Sri Lanka"
+
+
+@pytest.mark.asyncio
+async def test_bare_city_name_resolves_via_sri_lanka_bias_among_worldwide_matches(monkeypatch):
+    """Regression test for the live bug this fix addresses: a bare "Kandy"
+    or "Colombo" used to fail with an ambiguous-city error because
+    Open-Meteo's geocoding is global and several unrelated places share the
+    exact same name. Exactly one Sri Lanka-tagged match among several
+    same-named worldwide candidates now resolves automatically instead of
+    asking the user to disambiguate."""
+    client = FakeClient({
+        GEOCODING_API_URL: FakeResponse({"results": [
+            {"name": "Kandy", "country": "Sri Lanka", "timezone": "Asia/Colombo", "latitude": 7.2906, "longitude": 80.6336},
+            {"name": "Kandy", "country": "Uzbekistan", "latitude": 40.0, "longitude": 65.0},
+            {"name": "Kandy", "country": "Kyrgyzstan", "latitude": 41.0, "longitude": 73.0},
+        ]}),
+        FORECAST_API_URL: FakeResponse(weather_payload()),
+        AIR_QUALITY_API_URL: FakeResponse(air_payload()),
+    }, timeout=10)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: client)
+
+    result = await EnvironmentIR().retrieve({"location": "Kandy"})
+
+    assert result.errors == []
+    assert result.resolved_location is not None
+    assert result.resolved_location.country == "Sri Lanka"
+    assert result.latitude == 7.2906 and result.longitude == 80.6336
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_bare_city_name_still_ambiguous_with_two_sri_lankan_matches(monkeypatch):
+    """The Sri Lanka bias is a safety net, not a guess: if more than one
+    candidate is itself tagged Sri Lanka, it's still genuinely ambiguous."""
+    client = FakeClient({GEOCODING_API_URL: FakeResponse({"results": [
+        {"name": "Kandy", "country": "Sri Lanka", "latitude": 7.29, "longitude": 80.63},
+        {"name": "Kandy", "country": "Sri Lanka", "latitude": 7.30, "longitude": 80.64},
+    ]})}, timeout=10)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: client)
+
+    result = await EnvironmentIR().retrieve({"location": "Kandy"})
+
+    assert result.errors[0].code == AgentErrorCode.INVALID_REQUEST
+    assert "ambiguous" in result.errors[0].message
+
+
+@pytest.mark.asyncio
+async def test_location_with_explicit_country_is_not_augmented(monkeypatch):
+    """A location that already names a country (e.g. composed by the NLP
+    pipeline as "<city>, <country>") is sent through unchanged."""
+    client = FakeClient({
+        GEOCODING_API_URL: FakeResponse({"results": [{
+            "name": "Kandy", "country": "Sri Lanka", "timezone": "Asia/Colombo",
+            "latitude": 7.2906, "longitude": 80.6336,
+        }]}),
+        FORECAST_API_URL: FakeResponse(weather_payload()),
+        AIR_QUALITY_API_URL: FakeResponse(air_payload()),
+    }, timeout=10)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: client)
+
+    await EnvironmentIR().retrieve({"location": "Kandy, Sri Lanka"})
+
+    geocoding_params = next(params for url, params in client.calls if url == GEOCODING_API_URL)
+    assert geocoding_params["name"] == "Kandy, Sri Lanka"
+
+
+@pytest.mark.asyncio
+async def test_weather_forecast_time_is_time_of_day_not_full_datetime(monkeypatch):
+    """forecast.time must be just the time-of-day (e.g. "23:00"), not the
+    provider's full ISO datetime -- `date` already carries the date half,
+    so a full datetime here duplicated it when formatted for display."""
+    client = FakeClient({
+        GEOCODING_API_URL: FakeResponse({"results": [{
+            "name": "Colombo", "country": "Sri Lanka", "timezone": "UTC",
+            "latitude": 6.9271, "longitude": 79.8612,
+        }]}),
+        FORECAST_API_URL: FakeResponse(weather_payload()),
+        AIR_QUALITY_API_URL: FakeResponse(air_payload()),
+    }, timeout=10)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: client)
+
+    result = await EnvironmentIR().retrieve({"location": "Colombo"})
+
+    assert result.weather is not None
+    times_of_day = [forecast.time for forecast in result.weather.forecasts]
+    assert times_of_day == ["23:00", "12:00"]
+    assert all("T" not in t for t in times_of_day)
+
+
+@pytest.mark.asyncio
+async def test_air_quality_forecasts_are_windowed_not_a_full_two_day_dump(monkeypatch):
+    """Air quality used to return every hour of the full 2-day forecast
+    (up to 48 rows); it's now windowed to a small number of upcoming hours,
+    matching weather's current-forecast framing."""
+    hours = 48
+    times = [f"2026-09-29T{h % 24:02d}:00" for h in range(hours)]
+    payload = {
+        "timezone": "UTC",
+        "hourly": {
+            "time": times,
+            "pm2_5": [10.0] * hours,
+            "us_aqi": [50] * hours,
+            "european_aqi": [20] * hours,
+        },
+    }
+    client = FakeClient({
+        GEOCODING_API_URL: FakeResponse({"results": [{
+            "name": "Colombo", "country": "Sri Lanka", "timezone": "UTC",
+            "latitude": 6.9271, "longitude": 79.8612,
+        }]}),
+        FORECAST_API_URL: FakeResponse(weather_payload()),
+        AIR_QUALITY_API_URL: FakeResponse(payload),
+    }, timeout=10)
+    monkeypatch.setattr("app.ir.environment_ir.httpx.AsyncClient", lambda *, timeout: client)
+
+    result = await EnvironmentIR().retrieve({"location": "Colombo"})
+
+    assert result.air_quality is not None
+    assert 0 < len(result.air_quality.forecasts) <= 6
+
+
+@pytest.mark.asyncio
 async def test_air_quality_timeout_preserves_weather_as_partial_success(monkeypatch):
     client = FakeClient({
         FORECAST_API_URL: FakeResponse(weather_payload()),
