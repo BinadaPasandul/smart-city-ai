@@ -138,7 +138,9 @@ async def test_successfully_resolves_city_and_uses_result_for_both_forecasts(mon
         "longitude": 79.8612,
     }
     requests_by_url = {url: params for url, params in fake_client.calls}
-    assert requests_by_url[GEOCODING_API_URL]["name"] == "Colombo"
+    # "Colombo" is a bare known Sri Lankan city name, so it's biased toward
+    # Sri Lanka in the geocoding request itself -- see _augment_with_known_country.
+    assert requests_by_url[GEOCODING_API_URL]["name"] == "Colombo, Sri Lanka"
     for url in (FORECAST_API_URL, AIR_QUALITY_API_URL):
         assert requests_by_url[url]["latitude"] == 6.9271
         assert requests_by_url[url]["longitude"] == 79.8612

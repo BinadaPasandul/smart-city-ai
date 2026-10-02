@@ -490,9 +490,13 @@ async def test_environment_ambiguous_geocoding_is_specialist_failure_with_partia
         async def get(self, url, *, params):
             self.calls.append((url, params))
             if url == GEOCODING_API_URL:
+                # Two distinct Sri Lanka-tagged matches: genuinely ambiguous
+                # even with the country bias in _resolve_location, since that
+                # bias only auto-selects when exactly one candidate is
+                # Sri Lanka (see _augment_with_known_country).
                 return MockResponse({"results": [
                     {"name": "Colombo", "country": "Sri Lanka", "latitude": 6.9, "longitude": 79.8},
-                    {"name": "Colombo", "country": "Another Country", "latitude": 7.0, "longitude": 80.0},
+                    {"name": "Colombo", "country": "Sri Lanka", "latitude": 7.0, "longitude": 80.0},
                 ]})
             return self.responses[url]
 
