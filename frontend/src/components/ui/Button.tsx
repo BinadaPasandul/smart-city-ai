@@ -11,10 +11,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
-    "bg-civic-600 text-white hover:bg-civic-700 active:bg-civic-800 shadow-sm shadow-civic-900/10",
+    "bg-gold-500 text-ink-950 hover:bg-gold-400 active:bg-gold-600 shadow-md shadow-gold-900/30 hover:shadow-lg hover:shadow-gold-500/30",
   secondary:
-    "bg-white text-ink-800 border border-ink-200 hover:border-civic-300 hover:text-civic-700",
-  ghost: "text-ink-600 hover:bg-ink-100 hover:text-ink-900",
+    "border border-white/10 bg-white/5 text-ink-100 backdrop-blur-xl hover:border-gold-400/40 hover:bg-white/10 hover:text-gold-300",
+  ghost: "text-ink-300 hover:bg-white/5 hover:text-ink-50",
 };
 
 /**
@@ -31,7 +31,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50",
         VARIANT_CLASSES[variant],
         className,
       )}

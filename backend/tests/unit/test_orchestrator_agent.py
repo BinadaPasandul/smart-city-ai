@@ -3,7 +3,7 @@ from uuid import uuid4
 import pytest
 
 from app.agents.base import BaseAgent
-from app.agents.contracts import AgentErrorCode, AgentRequest, AgentResponse
+from app.agents.contracts import AgentError, AgentErrorCode, AgentRequest, AgentResponse
 from app.agents.orchestrator.agent import CityOrchestratorAgent
 from app.agents.orchestrator.router import DeterministicQueryRouter
 from app.agents.registry import AgentRegistry
@@ -24,6 +24,24 @@ class FakeAgent(BaseAgent):
             agent_name=self.name,
             success=True,
             answer=f"Handled by {self.name}",
+        )
+
+
+class FakeFailingWithOwnErrorAgent(BaseAgent):
+    """Returns a normal (non-exception) failure with its own specific AgentError,
+    mirroring EnvironmentAgent's ambiguous-location response shape."""
+
+    def __init__(self, name: str, *, code: AgentErrorCode, message: str) -> None:
+        super().__init__(name)
+        self._code = code
+        self._message = message
+
+    async def execute(self, request: AgentRequest) -> AgentResponse:
+        return AgentResponse(
+            request_id=request.request_id,
+            agent_name=self.name,
+            success=False,
+            error=AgentError(code=self._code, message=self._message),
         )
 
 
@@ -116,3 +134,69 @@ async def test_agents_are_routed_independently(populated_registry) -> None:
         await orchestrator.execute(AgentRequest(query=query))
 
     assert [len(agent.received) for agent in agents.values()] == [1, 1, 1]
+
+
+@pytest.mark.asyncio
+async def test_single_specialist_failure_preserves_its_own_error() -> None:
+    """A single selected specialist's specific AgentError (e.g. the
+    Environment agent's "ambiguous city" INVALID_REQUEST) must reach the
+    caller directly, not the generic multi-agent aggregation message."""
+    registry = AgentRegistry()
+    registry.register(
+        FakeFailingWithOwnErrorAgent(
+            "environment",
+            code=AgentErrorCode.INVALID_REQUEST,
+            message="The city name is ambiguous. Specify a country or provide latitude and longitude.",
+        )
+    )
+    orchestrator = CityOrchestratorAgent(registry, DeterministicQueryRouter())
+    request = AgentRequest(query="What's the weather in Colombo?")
+
+    response = await orchestrator.execute(request)
+
+    assert response.success is False
+    assert response.error.code == AgentErrorCode.INVALID_REQUEST
+    assert response.error.message == (
+        "The city name is ambiguous. Specify a country or provide latitude and longitude."
+    )
+    assert response.error.message != "No selected specialist completed the request."
+
+
+@pytest.mark.asyncio
+async def test_multi_specialist_failure_aggregation_is_unchanged() -> None:
+    """Fix 3 must not alter behavior when more than one specialist fails --
+    the existing generic aggregation message/code selection still applies."""
+    registry = AgentRegistry()
+    registry.register(
+        FakeFailingWithOwnErrorAgent(
+            "mobility", code=AgentErrorCode.TIMEOUT, message="mobility timed out"
+        )
+    )
+    registry.register(
+        FakeFailingWithOwnErrorAgent(
+            "environment", code=AgentErrorCode.TIMEOUT, message="environment timed out"
+        )
+    )
+
+    class TwoAgentRouter:
+        async def route(self, query: str, *, request_id: str | None = None):
+            from app.agents.orchestrator.router import RoutingDecision, RoutingResult, SpecialistAgentName
+
+            return RoutingResult(
+                decision=RoutingDecision(
+                    agent_names=[SpecialistAgentName.MOBILITY, SpecialistAgentName.ENVIRONMENT],
+                    confidence=1.0,
+                    reason="test",
+                    needs_clarification=False,
+                ),
+                routing_method="deterministic_fallback",
+            )
+
+    orchestrator = CityOrchestratorAgent(registry, TwoAgentRouter())
+    request = AgentRequest(query="traffic and weather")
+
+    response = await orchestrator.execute(request)
+
+    assert response.success is False
+    assert response.error.code == AgentErrorCode.TIMEOUT
+    assert response.error.message == "No selected specialist completed the request."

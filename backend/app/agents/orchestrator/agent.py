@@ -185,17 +185,27 @@ class CityOrchestratorAgent(BaseAgent):
         errors = [result.error for result in results if result.error is not None]
         overall_error = None
         if summary.status is ExecutionStatus.FAILED:
-            error_codes = {error.code for error in errors}
-            if error_codes == {AgentErrorCode.AGENT_NOT_FOUND}:
-                error_code = AgentErrorCode.AGENT_NOT_FOUND
-            elif error_codes == {AgentErrorCode.TIMEOUT}:
-                error_code = AgentErrorCode.TIMEOUT
+            if len(results) == 1 and results[0].error is not None:
+                # Exactly one specialist was selected and it failed: its own
+                # error (e.g. "the city name is ambiguous") is specific and
+                # useful, unlike the generic aggregation message below, which
+                # exists for combining >=2 failures and isn't meaningful for
+                # exactly one. Only used when web search didn't rescue the
+                # request (see `error=None if web_evidence else overall_error`
+                # below) -- multi-agent aggregation is unchanged.
+                overall_error = results[0].error
             else:
-                error_code = AgentErrorCode.AGENT_EXECUTION_FAILED
-            overall_error = AgentError(
-                code=error_code,
-                message="No selected specialist completed the request.",
-            )
+                error_codes = {error.code for error in errors}
+                if error_codes == {AgentErrorCode.AGENT_NOT_FOUND}:
+                    error_code = AgentErrorCode.AGENT_NOT_FOUND
+                elif error_codes == {AgentErrorCode.TIMEOUT}:
+                    error_code = AgentErrorCode.TIMEOUT
+                else:
+                    error_code = AgentErrorCode.AGENT_EXECUTION_FAILED
+                overall_error = AgentError(
+                    code=error_code,
+                    message="No selected specialist completed the request.",
+                )
 
         specialist_sources = [
             source

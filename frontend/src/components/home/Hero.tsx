@@ -4,6 +4,7 @@ interface HeroProps {
   draft: string;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
+  isAssistantTyping: boolean;
 }
 
 /**
@@ -11,33 +12,31 @@ interface HeroProps {
  * shared ChatInput) hands off to the dedicated chat layout — see
  * useChat()'s `hasStarted` and HomePage's conditional render.
  */
-export function Hero({ draft, onDraftChange, onSubmit }: HeroProps) {
+export function Hero({ draft, onDraftChange, onSubmit, isAssistantTyping }: HeroProps) {
   return (
-    <section className="mx-auto max-w-3xl text-center">
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-civic-200 bg-civic-50 px-3 py-1 text-xs font-medium text-civic-700">
-        <span className="h-1.5 w-1.5 rounded-full bg-civic-500" />
-        Agentic Citizen Assistant
-      </span>
+    <section className="relative mx-auto max-w-3xl text-center">
+      <div
+        aria-hidden="true"
+        className="ambient-glow left-1/2 top-0 h-72 w-[36rem] -translate-x-1/2 -translate-y-1/3 bg-white/[0.05]"
+      />
 
-      <h1 className="mt-6 text-4xl font-semibold tracking-tight text-ink-900 sm:text-5xl">
+      <h1 className="relative text-4xl font-semibold tracking-tight text-ink-50 sm:text-5xl">
         Your city, connected through AI.
       </h1>
 
-      <p className="mt-5 text-balance text-base leading-relaxed text-ink-600 sm:text-lg">
-        CIVA brings together mobility, environmental, and public service
-        information through one conversational assistant — so you
-        don&apos;t have to search a dozen different places for an answer.
+      <div className="gold-shine-line relative mx-auto mt-6 w-16" />
+
+      <p className="relative mt-6 text-balance text-base leading-relaxed text-ink-400 sm:text-lg">
+        CIVA brings a whole city together
       </p>
 
       <ChatInput
         value={draft}
         onChange={onDraftChange}
         onSubmit={onSubmit}
+        disabled={isAssistantTyping}
         className="mx-auto mt-10 max-w-xl"
       />
-      <p className="mt-3 text-xs text-ink-400">
-        Preview only — CIVA isn&apos;t connected to live city data yet.
-      </p>
     </section>
   );
 }

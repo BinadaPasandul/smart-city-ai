@@ -12,6 +12,8 @@ interface ChatInputProps {
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
+  /** Locks the composer (textarea + send button) while a request is in flight. */
+  disabled?: boolean;
 }
 
 /**
@@ -27,10 +29,11 @@ export function ChatInput({
   placeholder = "Ask anything about your city…",
   autoFocus = false,
   className,
+  disabled = false,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputId = useId();
-  const canSubmit = value.trim().length > 0;
+  const canSubmit = value.trim().length > 0 && !disabled;
 
   // Auto-grow with content, capped so the composer can't take over the screen.
   useEffect(() => {
@@ -39,6 +42,18 @@ export function ChatInput({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
   }, [value]);
+
+  // autoFocus places the caret at the start of any pre-filled value (e.g.
+  // when the Hero composer hands off to this dedicated chat layout's own
+  // textarea mid-word). Move it to the end once, on mount, to match.
+  useEffect(() => {
+    if (!autoFocus) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const submit = () => {
     if (canSubmit) {
@@ -61,7 +76,7 @@ export function ChatInput({
         submit();
       }}
     >
-      <div className="flex items-end gap-3 rounded-xl border border-ink-200 bg-white p-2 shadow-sm shadow-ink-900/5 focus-within:border-civic-300">
+      <div className="glass-surface flex items-end gap-3 rounded-xl p-2 shadow-lg shadow-black/40 transition-colors duration-300 focus-within:border-gold-400/50">
         <label htmlFor={inputId} className="sr-only">
           Message
         </label>
@@ -74,7 +89,8 @@ export function ChatInput({
           placeholder={placeholder}
           rows={1}
           autoFocus={autoFocus}
-          className="max-h-40 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none"
+          disabled={disabled}
+          className="max-h-40 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm text-ink-50 placeholder:text-ink-500 focus:outline-none disabled:cursor-not-allowed"
         />
         <Button type="submit" disabled={!canSubmit}>
           Ask
