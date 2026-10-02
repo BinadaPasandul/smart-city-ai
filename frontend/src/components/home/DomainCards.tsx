@@ -61,31 +61,27 @@ export function DomainCards() {
       <div className="text-center">
         <h2
           id="domains-heading"
-          className="text-sm font-semibold uppercase tracking-wide text-civic-600"
+          className="text-sm font-semibold uppercase tracking-wide text-gold-400"
         >
           Specialist agents
         </h2>
-        <p className="mt-2 text-2xl font-semibold tracking-tight text-ink-900">
+        <p className="mt-2 text-2xl font-semibold tracking-tight text-ink-50">
           Three domains, one conversation
-        </p>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-ink-500">
-          Each domain below is handled by its own specialist agent. The City
-          Orchestrator decides which one (or several) your question needs.
         </p>
       </div>
 
       <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
         {DOMAINS.map((domain) => (
           <Card key={domain.name} className="text-left">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-civic-50 text-civic-600">
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 text-ink-200 ring-1 ring-white/10">
               <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
                 {domain.icon}
               </svg>
             </span>
-            <h3 className="mt-4 text-base font-semibold text-ink-900">
+            <h3 className="mt-4 text-base font-semibold text-ink-50">
               {domain.name}
             </h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-ink-500">
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-400">
               {domain.description}
             </p>
           </Card>

@@ -549,7 +549,10 @@ async def test_public_services_unsupported_category_is_structured_and_not_web_el
     assert response.success is False
     result = response.metadata["execution_summary"]["results"][0]
     assert result["error"]["code"] == AgentErrorCode.UNSUPPORTED_REQUEST.value
-    assert response.error.code == AgentErrorCode.AGENT_EXECUTION_FAILED
+    # A single selected specialist's own meaningful error is now preserved
+    # at the top level too, rather than being replaced by the generic
+    # multi-agent aggregation message (see CityOrchestratorAgent.execute()).
+    assert response.error.code == AgentErrorCode.UNSUPPORTED_REQUEST
     assert response.sources == []
     assert response.metadata["execution_status"] == "failed"
     assert provider.calls == []

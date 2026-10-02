@@ -25,25 +25,35 @@ export function ChatContainer({
 }: ChatContainerProps) {
   const hasMessages = messages.length > 0;
 
-  return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      {hasMessages ? (
-        <MessageList messages={messages} isAssistantTyping={isAssistantTyping} />
-      ) : (
+  if (!hasMessages) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
         <ChatWelcome onSelectSuggestion={onDraftChange} />
-      )}
-
-      <div className="border-t border-ink-200/80 bg-ink-50/80 px-4 py-4 sm:px-6">
         <ChatInput
           value={draft}
           onChange={onDraftChange}
           onSubmit={onSubmit}
+          disabled={isAssistantTyping}
+          autoFocus
+          className="mt-8 w-full max-w-3xl"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <MessageList messages={messages} isAssistantTyping={isAssistantTyping} />
+
+      <div className="border-t border-white/10 bg-ink-950/60 px-4 py-4 backdrop-blur-xl sm:px-6">
+        <ChatInput
+          value={draft}
+          onChange={onDraftChange}
+          onSubmit={onSubmit}
+          disabled={isAssistantTyping}
           autoFocus
           className="mx-auto max-w-3xl"
         />
-        <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-ink-400">
-          Preview only — CIVA isn&apos;t connected to live city data yet.
-        </p>
       </div>
     </div>
   );

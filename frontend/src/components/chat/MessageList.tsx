@@ -36,15 +36,15 @@ export function MessageList({ messages, isAssistantTyping }: MessageListProps) {
         {isAssistantTyping && (
           <li className="flex items-start gap-3" aria-label="Assistant is typing">
             <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink-900 text-white"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gold-500/15 text-gold-400 ring-1 ring-gold-400/30"
               aria-hidden="true"
             >
               <CivaMark className="h-5 w-5" />
             </span>
-            <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm border border-ink-200/80 bg-white px-4 py-3">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-300 [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-300 [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-300" />
+            <div className="glass-surface flex items-center gap-1 rounded-2xl rounded-tl-sm px-4 py-3">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-400 [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-400 [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-400" />
             </div>
           </li>
         )}

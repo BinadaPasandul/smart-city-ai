@@ -3,47 +3,94 @@
 /*
  * Design tokens for the CIVA shell.
  * Tailwind v4 is CSS-first: these become usable utilities automatically
- * (e.g. --color-civic-600 -> bg-civic-600, text-civic-600, border-civic-600).
- * Palette intent: deep slate/navy for trust & stability, a cyan "signal"
- * accent for the AI/agentic feel, kept restrained rather than decorative.
+ * (e.g. --color-gold-600 -> bg-gold-600, text-gold-600, border-gold-600).
+ * Palette intent: true black/graphite (no blue tint) for a premium dark
+ * shell, with gold reserved for thin lines and small accents — not a
+ * dominant fill color.
  */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
-  --color-civic-50: #f0f9ff;
-  --color-civic-100: #e0f2fe;
-  --color-civic-200: #bae6fd;
-  --color-civic-300: #7dd3fc;
-  --color-civic-400: #38bdf8;
-  --color-civic-500: #0ea5e9;
-  --color-civic-600: #0284c7;
-  --color-civic-700: #0369a1;
-  --color-civic-800: #075985;
-  --color-civic-900: #0c4a6e;
+  --color-gold-50: #fdf8ec;
+  --color-gold-100: #faf0d7;
+  --color-gold-200: #f3dfa8;
+  --color-gold-300: #e9c874;
+  --color-gold-400: #dcad4a;
+  --color-gold-500: #c9992f;
+  --color-gold-600: #a97c22;
+  --color-gold-700: #86611c;
+  --color-gold-800: #6b4d1a;
+  --color-gold-900: #59401a;
 
-  --color-ink-50: #f8fafc;
-  --color-ink-100: #f1f5f9;
-  --color-ink-200: #e2e8f0;
-  --color-ink-300: #cbd5e1;
-  --color-ink-400: #94a3b8;
-  --color-ink-500: #64748b;
-  --color-ink-600: #475569;
-  --color-ink-700: #334155;
-  --color-ink-800: #1e293b;
-  --color-ink-900: #0f172a;
-  --color-ink-950: #020617;
+  --color-ink-50: #fafafa;
+  --color-ink-100: #f0f0f1;
+  --color-ink-200: #dcdcdd;
+  --color-ink-300: #b8b8ba;
+  --color-ink-400: #8a8a8d;
+  --color-ink-500: #636366;
+  --color-ink-600: #47474a;
+  --color-ink-700: #2e2e30;
+  --color-ink-800: #1c1c1e;
+  --color-ink-900: #121213;
+  --color-ink-950: #060606;
+
+  --animate-fade-in: fade-in 0.35s ease-out;
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
+  }
 }
 
 @layer base {
   html {
-    color-scheme: light;
+    color-scheme: dark;
+    scroll-behavior: smooth;
   }
 
   body {
-    @apply bg-ink-50 text-ink-900 antialiased font-sans;
+    @apply bg-ink-950 text-ink-50 antialiased font-sans;
   }
 
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-civic-500;
+    @apply outline-2 outline-offset-2 outline-gold-400;
+  }
+}
+
+@layer utilities {
+  /* Shared glassmorphism surface: a faint tinted blur over the dark base,
+     used for cards, the header/footer and the composer so they read as one
+     consistent "premium" material rather than separately-styled panels. */
+  .glass-surface {
+    @apply border border-white/10 bg-white/[0.04] backdrop-blur-xl;
+  }
+
+  /* Large, very low-opacity blurred color fields positioned behind content
+     to give the dark theme depth instead of a flat black fill. */
+  .ambient-glow {
+    @apply pointer-events-none absolute rounded-full blur-3xl;
+  }
+
+  /* A thin horizontal gold shimmer — the one recurring "gold line" accent,
+     used sparingly (header, footer, hero) rather than as a fill color. */
+  .gold-shine-line {
+    @apply h-px bg-gradient-to-r from-transparent via-gold-400/60 to-transparent;
   }
 }

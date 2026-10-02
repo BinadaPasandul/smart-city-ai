@@ -23,9 +23,11 @@ export interface ChatRequest {
   /** 1–5000 chars (see backend CHAT_MAX_MESSAGE_LENGTH); trimmed server-side. */
   message: string;
   /**
-   * Optional structured context. As of the last backend inspection this is
-   * NOT reliably delivered to specialist agents end-to-end — prefer putting
-   * location/intent in `message` until that is confirmed fixed server-side.
+   * Optional structured context (e.g. `{ latitude, longitude }` or
+   * `{ location }`). The backend now reaches specialists correctly via
+   * `SpecialistContextAdapter`, but this integration phase intentionally
+   * sends `{}` — see useChat.ts — rather than inventing browser geolocation
+   * or other context that wasn't asked for.
    */
   context?: Record<string, unknown>;
 }
@@ -74,19 +76,44 @@ export interface ChatResponse {
 }
 
 /* -------------------------------------------------------------------------
- * Local UI state types (Phase 3A)
+ * Local UI state types
  *
  * These are NOT the backend contract above — they exist purely in React
- * state for the local-only chat preview. A `ChatMessage` is not a
- * `ChatResponse`; there's no `sources`/`metadata`/`error` here because
- * nothing has actually been retrieved from the backend yet.
+ * state for the chat UI. A `ChatMessage` is not a `ChatResponse`: it's the
+ * result of useChat's mapping layer flattening one real (or failed) backend
+ * call into something a message bubble can render, keeping only the pieces
+ * worth preserving for a later sources/metadata UI rather than the whole
+ * response object.
  * ---------------------------------------------------------------------- */
 
 export type MessageRole = "user" | "assistant";
+
+/**
+ * The subset of `ChatMetadata` worth keeping on a message today. Deliberately
+ * not the whole `ChatMetadata` shape (see module docstring) — e.g. Gemini
+ * retry bookkeeping and web-search internals aren't rendered anywhere yet.
+ */
+export interface ChatMessageMetadata {
+  selected_agents: SpecialistAgentName[];
+  execution_status: ExecutionStatus | null;
+  successful_agents: SpecialistAgentName[];
+  failed_agents: SpecialistAgentName[];
+  synthesis_method: string | null;
+  answer_basis: ChatMetadata["answer_basis"];
+}
 
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   timestamp: Date;
+  /**
+   * Only present on assistant messages that came from a real backend call
+   * (absent for the user's own messages, and for client-side network-error
+   * messages that never reached the backend at all).
+   */
+  sources?: ChatSource[];
+  metadata?: ChatMessageMetadata;
+  /** Set when the message represents a logical backend failure or a client-side error. */
+  error?: ChatError;
 }

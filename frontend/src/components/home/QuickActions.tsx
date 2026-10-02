@@ -102,14 +102,14 @@ export function QuickActions({ onSelectAction }: QuickActionsProps) {
             key={action.label}
             type="button"
             onClick={() => onSelectAction(action.label)}
-            className="flex flex-col items-center gap-2.5 rounded-xl border border-ink-200/80 bg-white px-3 py-5 text-center transition-colors duration-150 hover:border-civic-300 hover:bg-civic-50"
+            className="glass-surface flex flex-col items-center gap-2.5 rounded-xl px-3 py-5 text-center transition-all duration-300 hover:-translate-y-0.5 hover:border-gold-400/40 hover:bg-white/[0.07]"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-ink-50 text-ink-600">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 text-ink-200">
               <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
                 {action.icon}
               </svg>
             </span>
-            <span className="text-xs font-medium text-ink-700">
+            <span className="text-xs font-medium text-ink-200">
               {action.label}
             </span>
           </button>

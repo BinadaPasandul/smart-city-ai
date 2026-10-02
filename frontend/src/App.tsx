@@ -6,7 +6,7 @@ function App() {
   const chat = useChat();
 
   return (
-    <AppLayout hideFooter={chat.hasStarted}>
+    <AppLayout hideFooter={chat.hasStarted} onOpenChat={chat.hasStarted ? undefined : chat.startChat}>
       <HomePage chat={chat} />
     </AppLayout>
   );

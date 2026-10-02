@@ -12,11 +12,11 @@ interface ChatWelcomeProps {
 /** Empty state for the dedicated chat layout, shown before the first message. */
 export function ChatWelcome({ onSelectSuggestion }: ChatWelcomeProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-10 text-center">
-      <h2 className="text-2xl font-semibold tracking-tight text-ink-900">
+    <div className="flex flex-col items-center px-4 text-center">
+      <h2 className="text-2xl font-semibold tracking-tight text-ink-50">
         How can I help you today?
       </h2>
-      <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-500">
+      <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-400">
         Ask about mobility, the environment, or public services in your
         city.
       </p>
@@ -27,7 +27,7 @@ export function ChatWelcome({ onSelectSuggestion }: ChatWelcomeProps) {
             key={suggestion}
             type="button"
             onClick={() => onSelectSuggestion(suggestion)}
-            className="rounded-full border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition-colors duration-150 hover:border-civic-300 hover:bg-civic-50 hover:text-civic-700"
+            className="glass-surface rounded-full px-4 py-2 text-sm font-medium text-ink-200 transition-all duration-300 hover:-translate-y-0.5 hover:border-gold-400/40 hover:bg-white/[0.07] hover:text-gold-300"
           >
             {suggestion}
           </button>
