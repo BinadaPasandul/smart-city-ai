@@ -1,0 +1,471 @@
+{
+  "metadata": {
+    "source_type": "synthetic_demo",
+    "description": "Synthetic seed data for development and testing. Not real-world service information.",
+    "version": "0.1.0",
+    "last_updated": "2026-09-30",
+    "disclaimer": "All names, addresses, and contact numbers in this dataset are fictional placeholders generated for development purposes. They do not represent real hospitals, police stations, fire stations, government offices, emergency services, or citizen complaint channels."
+  },
+  "hospitals": [
+    {
+      "id": "hosp_001",
+      "name": "Colombo National General Hospital",
+      "type": "teaching",
+      "location": "Colombo",
+      "district": "Colombo",
+      "address": "No. 12, Hospital Road, Colombo",
+      "services": ["emergency", "surgery", "maternity", "outpatient", "laboratory"],
+      "contact": "+94-000-0001",
+      "operating_hours": "24/7",
+      "emergency_available": true
+    },
+    {
+      "id": "hosp_002",
+      "name": "Kandy Regional Hospital",
+      "type": "general",
+      "location": "Kandy",
+      "district": "Kandy",
+      "address": "No. 45, Lake Road, Kandy",
+      "services": ["emergency", "outpatient", "pediatrics", "radiology"],
+      "contact": "+94-000-0002",
+      "operating_hours": "24/7",
+      "emergency_available": true
+    },
+    {
+      "id": "hosp_003",
+      "name": "Galle District Hospital",
+      "type": "district_base_hospital",
+      "location": "Galle",
+      "district": "Galle",
+      "address": "No. 8, Church Street, Galle",
+      "services": ["emergency", "surgery", "outpatient"],
+      "contact": "+94-000-0003",
+      "operating_hours": "24/7",
+      "emergency_available": true
+    },
+    {
+      "id": "hosp_004",
+      "name": "Jaffna Teaching Hospital",
+      "type": "teaching",
+      "location": "Jaffna",
+      "district": "Jaffna",
+      "address": "No. 21, Temple Road, Jaffna",
+      "services": ["emergency", "surgery", "maternity", "outpatient"],
+      "contact": "+94-000-0004",
+      "operating_hours": "24/7",
+      "emergency_available": true
+    },
+    {
+      "id": "hosp_005",
+      "name": "Negombo City Hospital",
+      "type": "private",
+      "location": "Negombo",
+      "district": "Gampaha",
+      "address": "No. 33, Beach Road, Negombo",
+      "services": ["outpatient", "diagnostics", "dental"],
+      "contact": "+94-000-0005",
+      "operating_hours": "8:00-20:00 (Mon-Sun)",
+      "emergency_available": false
+    },
+    {
+      "id": "hosp_006",
+      "name": "Kurunegala General Hospital",
+      "type": "general",
+      "location": "Kurunegala",
+      "district": "Kurunegala",
+      "address": "No. 5, Main Street, Kurunegala",
+      "services": ["emergency", "outpatient", "orthopedics"],
+      "contact": "+94-000-0006",
+      "operating_hours": "24/7",
+      "emergency_available": true
+    },
+    {
+      "id": "hosp_007",
+      "name": "Anuradhapura Rural Hospital",
+      "type": "rural_hospital",
+      "location": "Anuradhapura",
+      "district": "Anuradhapura",
+      "address": "No. 17, Station Road, Anuradhapura",
+      "services": ["outpatient", "maternity"],
+      "contact": "+94-000-0007",
+      "operating_hours": "8:00-17:00 (Mon-Sat)",
+      "emergency_available": false
+    },
+    {
+      "id": "hosp_008",
+      "name": "Matara District Hospital",
+      "type": "district_base_hospital",
+      "location": "Matara",
+      "district": "Matara",
+      "address": "No. 29, Market Street, Matara",
+      "services": ["emergency", "outpatient", "pediatrics"],
+      "contact": "+94-000-0008",
+      "operating_hours": "24/7",
+      "emergency_available": true
+    },
+    {
+      "id": "hosp_009",
+      "name": "Nuwara Eliya General Hospital",
+      "type": "general",
+      "location": "Nuwara Eliya",
+      "district": "Nuwara Eliya",
+      "address": "No. 3, Colombo Road, Nuwara Eliya",
+      "services": ["emergency", "outpatient", "general_medicine"],
+      "contact": "+94-000-0009",
+      "operating_hours": "24/7",
+      "emergency_available": true
+    }
+  ],
+  "police_stations": [
+    {
+      "id": "police_001",
+      "name": "Colombo Fort Police Station",
+      "location": "Colombo",
+      "district": "Colombo",
+      "address": "No. 1, Fort Road, Colombo",
+      "contact": "+94-000-0010",
+      "services": ["crime_reporting", "traffic", "community_policing"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "police_002",
+      "name": "Kandy Central Police Station",
+      "location": "Kandy",
+      "district": "Kandy",
+      "address": "No. 14, Kandy Road, Kandy",
+      "contact": "+94-000-0011",
+      "services": ["crime_reporting", "traffic"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "police_003",
+      "name": "Galle Police Station",
+      "location": "Galle",
+      "district": "Galle",
+      "address": "No. 6, Beach Road, Galle",
+      "contact": "+94-000-0012",
+      "services": ["crime_reporting", "tourist_assistance"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "police_004",
+      "name": "Jaffna Police Station",
+      "location": "Jaffna",
+      "district": "Jaffna",
+      "address": "No. 19, Temple Road, Jaffna",
+      "contact": "+94-000-0013",
+      "services": ["crime_reporting", "community_policing"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "police_005",
+      "name": "Negombo Police Station",
+      "location": "Negombo",
+      "district": "Gampaha",
+      "address": "No. 22, Main Street, Negombo",
+      "contact": "+94-000-0014",
+      "services": ["crime_reporting", "traffic"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "police_006",
+      "name": "Kurunegala Police Station",
+      "location": "Kurunegala",
+      "district": "Kurunegala",
+      "address": "No. 9, Station Road, Kurunegala",
+      "contact": "+94-000-0015",
+      "services": ["crime_reporting", "traffic"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "police_007",
+      "name": "Trincomalee Police Station",
+      "location": "Trincomalee",
+      "district": "Trincomalee",
+      "address": "No. 11, Harbour Road, Trincomalee",
+      "contact": "+94-000-0016",
+      "services": ["crime_reporting", "coastal_patrol"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "police_008",
+      "name": "Batticaloa Police Station",
+      "location": "Batticaloa",
+      "district": "Batticaloa",
+      "address": "No. 4, Lake Road, Batticaloa",
+      "contact": "+94-000-0017",
+      "services": ["crime_reporting", "community_policing"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "police_009",
+      "name": "Ratnapura Police Station",
+      "location": "Ratnapura",
+      "district": "Ratnapura",
+      "address": "No. 27, Main Street, Ratnapura",
+      "contact": "+94-000-0018",
+      "services": ["crime_reporting", "traffic"],
+      "operating_hours": "24/7"
+    }
+  ],
+  "fire_stations": [
+    {
+      "id": "fire_001",
+      "name": "Colombo Central Fire Station",
+      "location": "Colombo",
+      "district": "Colombo",
+      "address": "No. 2, Fire Brigade Road, Colombo",
+      "contact": "+94-000-0019",
+      "emergency_services": ["fire_suppression", "rescue", "hazmat"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "fire_002",
+      "name": "Kandy Fire Station",
+      "location": "Kandy",
+      "district": "Kandy",
+      "address": "No. 16, Lake Road, Kandy",
+      "contact": "+94-000-0020",
+      "emergency_services": ["fire_suppression", "rescue"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "fire_003",
+      "name": "Galle Fire Station",
+      "location": "Galle",
+      "district": "Galle",
+      "address": "No. 10, Beach Road, Galle",
+      "contact": "+94-000-0021",
+      "emergency_services": ["fire_suppression", "rescue", "coastal_rescue"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "fire_004",
+      "name": "Negombo Fire Station",
+      "location": "Negombo",
+      "district": "Gampaha",
+      "address": "No. 31, Main Street, Negombo",
+      "contact": "+94-000-0022",
+      "emergency_services": ["fire_suppression", "rescue"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "fire_005",
+      "name": "Kurunegala Fire Station",
+      "location": "Kurunegala",
+      "district": "Kurunegala",
+      "address": "No. 7, Station Road, Kurunegala",
+      "contact": "+94-000-0023",
+      "emergency_services": ["fire_suppression", "rescue"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "fire_006",
+      "name": "Jaffna Fire Station",
+      "location": "Jaffna",
+      "district": "Jaffna",
+      "address": "No. 23, Temple Road, Jaffna",
+      "contact": "+94-000-0024",
+      "emergency_services": ["fire_suppression", "rescue"],
+      "operating_hours": "24/7"
+    },
+    {
+      "id": "fire_007",
+      "name": "Matara Fire Station",
+      "location": "Matara",
+      "district": "Matara",
+      "address": "No. 13, Market Street, Matara",
+      "contact": "+94-000-0025",
+      "emergency_services": ["fire_suppression", "rescue", "flood_response"],
+      "operating_hours": "24/7"
+    }
+  ],
+  "government_services": [
+    {
+      "id": "govserv_001",
+      "name": "Department of Motor Traffic",
+      "department": "Department of Motor Traffic",
+      "location": "Colombo",
+      "district": "Colombo",
+      "services": ["vehicle_registration", "driving_license_issuance", "vehicle_revenue_licensing"],
+      "contact": "+94-000-0026",
+      "operating_hours": "8:30-16:30 (Mon-Fri)"
+    },
+    {
+      "id": "govserv_002",
+      "name": "Kandy Divisional Secretariat",
+      "department": "Divisional Secretariat",
+      "location": "Kandy",
+      "district": "Kandy",
+      "services": ["birth_certificate", "death_certificate", "land_registration_assistance"],
+      "contact": "+94-000-0027",
+      "operating_hours": "8:30-16:30 (Mon-Fri)"
+    },
+    {
+      "id": "govserv_003",
+      "name": "Registrar General's Department",
+      "department": "Registrar General's Department",
+      "location": "Colombo",
+      "district": "Colombo",
+      "services": ["birth_registration", "marriage_registration"],
+      "contact": "+94-000-0028",
+      "operating_hours": "8:30-16:30 (Mon-Fri)"
+    },
+    {
+      "id": "govserv_004",
+      "name": "Galle Municipal Council",
+      "department": "Municipal Council",
+      "location": "Galle",
+      "district": "Galle",
+      "services": ["waste_management", "building_permits", "local_tax_collection"],
+      "contact": "+94-000-0029",
+      "operating_hours": "8:30-16:30 (Mon-Fri)"
+    },
+    {
+      "id": "govserv_005",
+      "name": "Department of Immigration and Emigration",
+      "department": "Immigration and Emigration Department",
+      "location": "Colombo",
+      "district": "Colombo",
+      "services": ["passport_services", "visa_extensions"],
+      "contact": "+94-000-0030",
+      "operating_hours": "8:30-16:30 (Mon-Fri)"
+    },
+    {
+      "id": "govserv_006",
+      "name": "Kandy Inland Revenue Office",
+      "department": "Inland Revenue Department",
+      "location": "Kandy",
+      "district": "Kandy",
+      "services": ["tax_filing", "tax_payments"],
+      "contact": "+94-000-0031",
+      "operating_hours": "8:30-16:30 (Mon-Fri)"
+    },
+    {
+      "id": "govserv_007",
+      "name": "Negombo Postal Department Office",
+      "department": "Postal Department",
+      "location": "Negombo",
+      "district": "Gampaha",
+      "services": ["mail_services", "money_orders", "bill_payments"],
+      "contact": "+94-000-0032",
+      "operating_hours": "9:00-16:00 (Mon-Sat)"
+    }
+  ],
+  "emergency_information": [
+    {
+      "id": "emerg_001",
+      "emergency_type": "medical",
+      "service": "National Ambulance Service",
+      "contact": "+94-000-0033",
+      "description": "Emergency medical transport and pre-hospital care for medical emergencies."
+    },
+    {
+      "id": "emerg_002",
+      "emergency_type": "police",
+      "service": "Police Emergency Hotline",
+      "contact": "+94-000-0034",
+      "description": "General emergency line for reporting crimes in progress or requesting urgent police response."
+    },
+    {
+      "id": "emerg_003",
+      "emergency_type": "fire",
+      "service": "Fire and Rescue Emergency Line",
+      "contact": "+94-000-0035",
+      "description": "Emergency line for reporting fires and requesting rescue services."
+    },
+    {
+      "id": "emerg_004",
+      "emergency_type": "disaster",
+      "service": "Disaster Management Centre Hotline",
+      "contact": "+94-000-0036",
+      "description": "Coordination hotline for reporting and responding to large-scale disasters."
+    },
+    {
+      "id": "emerg_005",
+      "emergency_type": "flood",
+      "service": "Flood Warning and Relief Hotline",
+      "contact": "+94-000-0037",
+      "description": "Reports flood warnings and coordinates relief assistance for affected areas."
+    },
+    {
+      "id": "emerg_006",
+      "emergency_type": "landslide",
+      "service": "Landslide Warning Hotline",
+      "contact": "+94-000-0038",
+      "description": "Issues landslide risk warnings and coordinates evacuation guidance."
+    },
+    {
+      "id": "emerg_007",
+      "emergency_type": "women_child_protection",
+      "service": "Women and Children Helpline",
+      "contact": "+94-000-0039",
+      "description": "Support and reporting line for women's and children's protection concerns."
+    },
+    {
+      "id": "emerg_008",
+      "emergency_type": "electricity",
+      "service": "Electricity Emergency Fault Reporting",
+      "contact": "+94-000-0040",
+      "description": "Reporting line for downed power lines and other urgent electrical hazards."
+    },
+    {
+      "id": "emerg_009",
+      "emergency_type": "gas_leak",
+      "service": "Gas Leak Emergency Hotline",
+      "contact": "+94-000-0041",
+      "description": "Emergency reporting line for suspected gas leaks and related hazards."
+    }
+  ],
+  "citizen_complaints": [
+    {
+      "id": "complaint_001",
+      "complaint_type": "streetlight_malfunction",
+      "responsible_department": "Municipal Council - Public Works",
+      "description": "Report a broken, flickering, or non-functioning streetlight.",
+      "submission_method": ["online_portal", "hotline"]
+    },
+    {
+      "id": "complaint_002",
+      "complaint_type": "waste_collection_missed",
+      "responsible_department": "Municipal Council - Waste Management",
+      "description": "Report a missed or delayed household waste collection.",
+      "submission_method": ["online_portal", "hotline", "in_person"]
+    },
+    {
+      "id": "complaint_003",
+      "complaint_type": "water_supply_issue",
+      "responsible_department": "National Water Supply and Drainage Board",
+      "description": "Report a water supply interruption, low pressure, or visible leak.",
+      "submission_method": ["hotline", "online_portal"]
+    },
+    {
+      "id": "complaint_004",
+      "complaint_type": "road_damage",
+      "responsible_department": "Road Development Authority",
+      "description": "Report potholes or other damage to a public road surface.",
+      "submission_method": ["online_portal", "in_person"]
+    },
+    {
+      "id": "complaint_005",
+      "complaint_type": "illegal_construction",
+      "responsible_department": "Municipal Council - Building Regulation",
+      "description": "Report suspected unauthorized or unpermitted construction work.",
+      "submission_method": ["in_person", "hotline"]
+    },
+    {
+      "id": "complaint_006",
+      "complaint_type": "drainage_blockage",
+      "responsible_department": "Municipal Council - Public Works",
+      "description": "Report a blocked, overflowing, or damaged drain.",
+      "submission_method": ["online_portal", "hotline"]
+    },
+    {
+      "id": "complaint_007",
+      "complaint_type": "noise_complaint",
+      "responsible_department": "Local Police / Municipal Council",
+      "description": "Report excessive or ongoing noise disturbances in a residential area.",
+      "submission_method": ["hotline", "in_person"]
+    }
+  ]
+}
